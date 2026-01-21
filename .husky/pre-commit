@@ -1,3 +1,1 @@
-#!/usr/bin/env sh
-echo "running pre-commit hook..."
 npx lint-staged

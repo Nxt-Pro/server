@@ -1,8 +1,13 @@
 import js from '@eslint/js';
 import importPlugin from 'eslint-plugin-import';
 import prettierRecommended from 'eslint-plugin-prettier/recommended';
-import tseslint from 'typescript-eslint';
 import globals from 'globals';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import tseslint from 'typescript-eslint';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default tseslint.config(
   js.configs.recommended,

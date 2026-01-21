@@ -14,10 +14,10 @@
     "experimentalDecorators": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
-    "baseUrl": "./src",
+    "rootDir": "./",
+    "baseUrl": "./",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["src/*"]
     },
     "incremental": true,
     "skipLibCheck": true,
@@ -29,6 +29,6 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
   },
-  "include": ["src"],
+  "include": ["src", "test"],
   "exclude": ["node_modules"]
 }
