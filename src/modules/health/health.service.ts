@@ -6,11 +6,13 @@ import { DatabaseService } from '@/database/database.service';
 @Injectable()
 export class HealthService {
   private readonly startTime = Date.now();
+  private readonly configService: ConfigService;
+  private readonly databaseService: DatabaseService;
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly databaseService: DatabaseService,
-  ) {}
+  constructor(configService: ConfigService, databaseService: DatabaseService) {
+    this.configService = configService;
+    this.databaseService = databaseService;
+  }
 
   getBasicHealth() {
     const uptime = Date.now() - this.startTime;

@@ -9,12 +9,21 @@ import { HealthService } from './health.service';
 
 @Controller('health')
 export class HealthController {
+  private readonly healthService: HealthService;
+  private readonly health: HealthCheckService;
+  private readonly db: TypeOrmHealthIndicator;
+  private readonly memory: MemoryHealthIndicator;
   constructor(
-    private readonly healthService: HealthService,
-    private readonly health: HealthCheckService,
-    private readonly db: TypeOrmHealthIndicator,
-    private readonly memory: MemoryHealthIndicator,
-  ) {}
+    healthService: HealthService,
+    health: HealthCheckService,
+    db: TypeOrmHealthIndicator,
+    memory: MemoryHealthIndicator,
+  ) {
+    this.healthService = healthService;
+    this.health = health;
+    this.db = db;
+    this.memory = memory;
+  }
   @Get()
   getHealthStatus() {
     return this.healthService.getBasicHealth();

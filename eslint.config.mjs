@@ -17,7 +17,7 @@ export default tseslint.config(
   prettierRecommended,
 
   {
-    files: ['**/*.ts', '**/*.js'],
+    files: ['**/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
       ecmaVersion: 'latest',

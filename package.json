@@ -19,15 +19,16 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migration:create": "typeorm migration:create ./src/database/migrations/$(date +%s)-migration",
-    "migration:generate": "typeorm migration:generate ./src/database/migrations/$(date +%s)-migration -d ./src/database/typeorm.config.ts",
-    "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d ./src/database/typeorm.config.ts",
-    "migration:revert": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d ./src/database/typeorm.config.ts",
+    "migration:create": "node scripts/create-migration.js",
+    "migration:generate": "node scripts/generate-migration.js",
+    "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d src/config/data-source.config.ts",
+    "migration:revert": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d src/config/data-source.config.ts",
+    "check:entities": "ts-node -r tsconfig-paths/register -e \"import { AppDataSource } from './src/config/data-source.config'; AppDataSource.initialize().then(() => { console.log('Entities:', AppDataSource.entityMetadatas.map(e => e.name)); process.exit(0); });\"",
     "seed:run": "ts-node -r tsconfig-paths/register ./src/database/seeders/index.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^1.2.1",
+    "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/terminus": "^11.0.0",
@@ -41,7 +42,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.28",
-    "uuid": "^13.0.0",
+    "ulid": "^3.0.2",
     "yup": "^1.7.1"
   },
   "devDependencies": {
@@ -55,7 +56,6 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
-    "@types/uuid": "^11.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-import": "^2.32.0",
@@ -75,7 +75,7 @@
     "typescript-eslint": "^8.20.0"
   },
   "lint-staged": {
-    "*.{ts,js,json,md}": [
+    "*.{ts,json,md}": [
       "eslint --fix",
       "prettier --write"
     ]
