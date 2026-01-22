@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
@@ -14,7 +15,12 @@ import { Request, Response } from 'express';
 @Catch(HttpException)
 @Injectable()
 export class HttpExceptionFilter implements ExceptionFilter {
-  constructor(private readonly config: ConfigService) {}
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+  private readonly config: ConfigService;
+
+  constructor(config: ConfigService) {
+    this.config = config;
+  }
 
   catch(exception: HttpException, host: ArgumentsHost) {
     const timestamp = new Date().toISOString();
@@ -47,7 +53,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     // Server errors (5xx)
-    console.error('Unhandled HTTP exception:', exception);
+    this.logger.error('Unhandled HTTP exception:', exception);
 
     response.status(status).json({
       success: false,

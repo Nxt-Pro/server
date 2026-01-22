@@ -1,5 +1,3 @@
-/* eslint-disable */
-
 import { Injectable, Logger } from '@nestjs/common';
 import * as Yup from 'yup';
 
@@ -7,7 +5,7 @@ import * as Yup from 'yup';
 export class ConfigValidatorService {
   private readonly logger = new Logger(ConfigValidatorService.name);
   private errors: string[] = [];
-  private readonly config: Record<string, any>;
+  private readonly config: NodeJS.ProcessEnv;
 
   constructor() {
     this.config = process.env;
@@ -30,9 +28,13 @@ export class ConfigValidatorService {
     results.forEach((result, index) => {
       const type = ['Environment', 'Database', 'JWT'][index];
       if (result.status === 'rejected') {
-        this.errors.push(`${type} validation failed: ${result.reason}`);
+        const reason =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+        this.errors.push(`${type} validation failed: ${reason}`);
         this.logger.error(
-          `${type} validation failed: ${this.sanitizeErrorMessage(result.reason)}`,
+          `${type} validation failed: ${this.sanitizeErrorMessage(reason)}`,
         );
       }
     });
@@ -43,12 +45,12 @@ export class ConfigValidatorService {
   /**
    * Validates a config object against the main environment schema for NestJS ConfigModule
    */
-  validate(config: Record<string, any>): Record<string, any> {
+  validate(config: Record<string, unknown>): Record<string, unknown> {
     try {
       return this.getEnvSchema().validateSync(config, {
         abortEarly: false,
         stripUnknown: true,
-      });
+      }) as Record<string, unknown>;
     } catch (error) {
       if (error instanceof Yup.ValidationError) {
         throw new Error(`Config validation failed: ${error.errors.join(', ')}`);
@@ -124,10 +126,7 @@ export class ConfigValidatorService {
   /**
    * Runs a Yup schema validation against the current config and logs results
    */
-  private async runSchemaValidation(
-    schema: Yup.ObjectSchema<any>,
-    type: string,
-  ) {
+  private async runSchemaValidation(schema: Yup.AnyObjectSchema, type: string) {
     try {
       await schema.validate(this.config, { abortEarly: false });
       this.logger.log(`${type} validated`);
@@ -142,7 +141,7 @@ export class ConfigValidatorService {
   /**
    * Returns the main Yup schema used by NestJS ConfigModule validation
    */
-  private getEnvSchema(): Yup.ObjectSchema<any> {
+  private getEnvSchema(): Yup.AnyObjectSchema {
     return Yup.object({
       NODE_ENV: Yup.string()
         .oneOf(['development', 'production', 'test'])

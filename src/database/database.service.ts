@@ -1,13 +1,23 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(DatabaseService.name);
+  private readonly dataSource: DataSource;
+
   constructor(
     @InjectDataSource()
-    private readonly dataSource: DataSource,
-  ) {}
+    dataSource: DataSource,
+  ) {
+    this.dataSource = dataSource;
+  }
 
   /**
    * Called when module initializes
@@ -26,7 +36,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     if (this.dataSource.isInitialized) {
       await this.dataSource.destroy();
-      console.log('Database connection closed');
+      this.logger.log('Database connection closed');
     }
   }
 
@@ -43,7 +53,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       await this.dataSource.query('SELECT 1');
       return true;
     } catch (error) {
-      console.error('Database connection check failed:', error);
+      this.logger.error('Database connection check failed:', error);
       return false;
     }
   }

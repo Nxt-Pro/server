@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -10,38 +11,41 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
-  console.log('Mounting validations...');
+  const logger = new Logger('Bootstrap');
+
+  logger.log('Mounting validations...');
   const configValidator = app.get(ConfigValidatorService);
   const isValid = await configValidator.validateAll();
 
   if (!isValid) {
-    console.error('Configuration validation failed');
+    logger.error('Configuration validation failed');
     await app.close();
     process.exit(1);
   }
-  console.log('Configuration validation passed');
+  logger.log('Configuration validation passed');
 
-  console.log('Mounting database...');
+  logger.log('Mounting database...');
   const databaseService = app.get(DatabaseService);
   const connected = await databaseService.checkConnection();
 
   if (!connected) {
-    console.error('Failed to connect to database');
+    logger.error('Failed to connect to database');
     await app.close();
     process.exit(1);
   }
-  console.log('Database connected successfully');
+  logger.log('Database connected successfully');
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port', 3000);
   const nodeEnv = configService.get<string>('nodeEnv', 'development');
 
-  console.log('Setting up server...');
+  logger.log('Setting up server...');
   setupServer(app, configService);
 
   await app.listen(port);
 
-  console.log(`
+  const serverBox = `
+\u001b[37m
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
 ║  🚀 NxtPro API Server Started                             ║
@@ -52,18 +56,19 @@ async function bootstrap() {
 ║  Health:      http://localhost:${port}/api/health${' '.repeat(11)} ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
-  `);
+\u001b[0m`;
+  logger.log(serverBox);
+
+  // Handle uncaught errors
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
+  });
+
+  process.on('uncaughtException', error => {
+    logger.error('Uncaught Exception:', error);
+    process.exit(1);
+  });
 }
 
-// Handle uncaught errors
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
-
-process.on('uncaughtException', error => {
-  console.error('Uncaught Exception:', error);
-  process.exit(1);
-});
-
-bootstrap();
+void bootstrap();

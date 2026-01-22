@@ -1,4 +1,4 @@
-import { Module, OnModuleInit } from '@nestjs/common';
+import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
@@ -11,10 +11,10 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
+import { configuration } from '@/config';
+import { DatabaseService } from '@/database';
 import { ConfigValidatorService } from '@/validators';
 import { HealthModule } from '@/modules/health/health.module';
-import { DatabaseService } from '@/database';
-import { configuration } from '@/config';
 
 @Module({
   imports: [
@@ -70,7 +70,9 @@ import { configuration } from '@/config';
   ],
 })
 export class AppModule implements OnModuleInit {
+  private readonly logger = new Logger(AppModule.name);
+
   onModuleInit() {
-    console.log('AppModule initialized');
+    this.logger.log('AppModule initialized');
   }
 }

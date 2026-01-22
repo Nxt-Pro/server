@@ -1,5 +1,3 @@
-/* eslint-disable */
-
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -28,13 +26,28 @@ describe('AppController (e2e)', () => {
   });
 
   it('/api (GET) should return welcome message', async () => {
-    const res = await request(app.getHttpServer()).get('/api').expect(200);
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    await request(httpServer)
+      .get('/api')
+      .expect(200)
+      .expect(response => {
+        const body = response.body as {
+          success: boolean;
+          statusCode: number;
+          data: {
+            message: string;
+            version: string;
+            health: string;
+            timestamp: string;
+          };
+        };
 
-    expect(res.body.success).toBe(true);
-    expect(res.body.statusCode).toBe(200);
-    expect(res.body.data).toHaveProperty('message', 'Welcome to NxtPro API');
-    expect(res.body.data).toHaveProperty('version');
-    expect(res.body.data).toHaveProperty('health', '/api/health');
-    expect(res.body.data).toHaveProperty('timestamp');
+        expect(body.success).toBe(true);
+        expect(body.statusCode).toBe(200);
+        expect(body.data).toHaveProperty('message', 'Welcome to NxtPro API');
+        expect(body.data).toHaveProperty('version');
+        expect(body.data).toHaveProperty('health', '/api/health');
+        expect(body.data).toHaveProperty('timestamp');
+      });
   });
 });

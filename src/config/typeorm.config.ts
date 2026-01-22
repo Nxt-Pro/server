@@ -1,20 +1,31 @@
-/* eslint-disable */
-
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import {
   TypeOrmModuleAsyncOptions,
   TypeOrmModuleOptions,
 } from '@nestjs/typeorm';
-import { SnakeNamingStrategy } from '@/database';
+import { DatabaseLogger, SnakeNamingStrategy } from '@/database';
+
+interface DatabaseConfig {
+  type: 'postgres';
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  database: string;
+  poolSize: number;
+  maxQueryExecutionTime: number;
+  ssl: boolean | { rejectUnauthorized: boolean };
+}
 
 export const typeOrmConfig: TypeOrmModuleAsyncOptions = {
   imports: [ConfigModule],
   inject: [ConfigService],
-  useFactory: async (
-    configService: ConfigService,
-  ): Promise<TypeOrmModuleOptions> => {
-    const dbConfig = configService.get('database');
-    const isProduction = configService.get('nodeEnv') === 'production';
+  useFactory: (configService: ConfigService): TypeOrmModuleOptions => {
+    const dbConfig = configService.get<DatabaseConfig>('database');
+    if (!dbConfig) {
+      throw new Error('Database configuration is missing');
+    }
+    const isProduction = configService.get<string>('nodeEnv') === 'production';
 
     return {
       // Connection
@@ -38,11 +49,11 @@ export const typeOrmConfig: TypeOrmModuleAsyncOptions = {
       autoLoadEntities: true,
       synchronize: false, // Never synchronize in production
 
-      migrationsRun: false, // Manually run migrations (isProduction for auto running)
+      migrationsRun: isProduction,
       migrationsTableName: 'migrations',
 
       logging: isProduction ? ['error'] : ['query', 'error', 'warn'],
-      logger: 'advanced-console',
+      logger: new DatabaseLogger(),
       maxQueryExecutionTime: dbConfig.maxQueryExecutionTime,
 
       // Naming strategy

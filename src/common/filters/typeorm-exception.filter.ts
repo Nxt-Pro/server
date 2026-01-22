@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpStatus,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
@@ -22,7 +23,12 @@ interface PostgresError {
 @Catch(QueryFailedError, EntityNotFoundError)
 @Injectable()
 export class TypeOrmExceptionFilter implements ExceptionFilter {
-  constructor(private readonly config: ConfigService) {}
+  private readonly logger = new Logger(TypeOrmExceptionFilter.name);
+  private readonly config: ConfigService;
+
+  constructor(config: ConfigService) {
+    this.config = config;
+  }
 
   catch(
     exception: QueryFailedError | EntityNotFoundError,
@@ -63,7 +69,7 @@ export class TypeOrmExceptionFilter implements ExceptionFilter {
       }
     }
 
-    console.error('Database exception:', exception);
+    this.logger.error('Database exception:', exception);
 
     response.status(status).json({
       success: false,
