@@ -1,11 +1,35 @@
-import { Column, Entity, JoinColumn, OneToMany, OneToOne } from 'typeorm';
-import { BaseEntity, CareerTimeline, PlayerStats, User } from '.';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  OneToMany,
+  OneToOne,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { Achievement, CareerTimeline, PlayerStats, User } from '.';
 
 @Entity('player_profiles')
-export class PlayerProfile extends BaseEntity {
+@Index(['user_id'])
+@Index(['is_verified', 'availability_status'])
+@Index(['club_name'])
+@Index(['city', 'country'])
+@Index(['position', 'availability_status', 'ai_score'])
+export class PlayerProfile {
+  @PrimaryColumn('char', { length: 26 })
+  user_id: string;
+
   @OneToOne(() => User, user => user.playerProfile)
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt: Date;
 
   @Column()
   full_name: string;
@@ -93,4 +117,7 @@ export class PlayerProfile extends BaseEntity {
 
   @OneToMany(() => CareerTimeline, timeline => timeline.player)
   career_timeline: CareerTimeline[];
+
+  @OneToMany(() => Achievement, achievement => achievement.player)
+  achievements: Achievement[];
 }

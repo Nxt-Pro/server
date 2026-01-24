@@ -1,7 +1,12 @@
-import { Column, Entity, OneToOne } from 'typeorm';
+import { Column, Entity, Index, OneToOne } from 'typeorm';
 import { BaseEntity, PlayerProfile, ScoutProfile } from '.';
 
 @Entity('users')
+@Index(['id'])
+@Index(['email'])
+@Index(['role'])
+@Index(['last_active'])
+@Index(['status', 'last_active'])
 export class User extends BaseEntity {
   @Column({ unique: true })
   email: string;

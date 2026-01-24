@@ -1,10 +1,22 @@
-import { Column, Entity, ManyToOne } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryColumn,
+} from 'typeorm';
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('player_stats')
-export class PlayerStats extends BaseEntity {
+@Index(['player_id'])
+@Index(['avg_rating'])
+export class PlayerStats {
   @ManyToOne(() => PlayerProfile, profile => profile.stats)
+  @PrimaryColumn('char', { length: 26 })
+  player_id: string;
+
+  @JoinColumn({ name: 'player_id' })
   player: PlayerProfile;
 
   @Column()

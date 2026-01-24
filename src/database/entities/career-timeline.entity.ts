@@ -1,10 +1,22 @@
-import { Column, Entity, ManyToOne } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { PlayerProfile } from './player-profile.entity';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryColumn,
+} from 'typeorm';
+import { PlayerProfile } from '.';
 
 @Entity('career_timeline')
-export class CareerTimeline extends BaseEntity {
+@Index(['player_id'])
+@Index(['start_date', 'is_current'])
+export class CareerTimeline {
   @ManyToOne(() => PlayerProfile, profile => profile.career_timeline)
+  @PrimaryColumn('char', { length: 26 })
+  player_id: string;
+
+  @JoinColumn({ name: 'player_id' })
   player: PlayerProfile;
 
   @Column()

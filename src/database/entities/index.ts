@@ -1,3 +1,4 @@
+export * from './achievement.entity';
 export * from './base.entity';
 export * from './career-timeline.entity';
 export * from './player-profile.entity';
