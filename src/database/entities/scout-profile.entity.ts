@@ -1,10 +1,12 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   OneToOne,
   PrimaryColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { User } from './user.entity';
 
@@ -13,12 +15,18 @@ import { User } from './user.entity';
 @Index(['verification_status'])
 @Index(['organization_type'])
 export class ScoutProfile {
-  @OneToOne(() => User, user => user.scoutProfile)
   @PrimaryColumn('char', { length: 26 })
   user_id: string;
 
+  @OneToOne(() => User, user => user.scoutProfile)
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt: Date;
 
   @Column()
   full_name: string;

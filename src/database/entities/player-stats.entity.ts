@@ -1,23 +1,31 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('player_stats')
-@Index(['player_id'])
+@Index(['player_id', 'season_year'])
 @Index(['avg_rating'])
 export class PlayerStats {
-  @ManyToOne(() => PlayerProfile, profile => profile.stats)
   @PrimaryColumn('char', { length: 26 })
   player_id: string;
 
+  @ManyToOne(() => PlayerProfile, profile => profile.stats)
   @JoinColumn({ name: 'player_id' })
   player: PlayerProfile;
+
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt: Date;
 
   @Column()
   goals: number;

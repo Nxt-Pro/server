@@ -1,10 +1,12 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { PlayerProfile } from '.';
 
@@ -12,12 +14,18 @@ import { PlayerProfile } from '.';
 @Index(['player_id'])
 @Index(['start_date', 'is_current'])
 export class CareerTimeline {
-  @ManyToOne(() => PlayerProfile, profile => profile.career_timeline)
   @PrimaryColumn('char', { length: 26 })
   player_id: string;
 
+  @ManyToOne(() => PlayerProfile, profile => profile.career_timeline)
   @JoinColumn({ name: 'player_id' })
   player: PlayerProfile;
+
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt: Date;
 
   @Column()
   title: string;

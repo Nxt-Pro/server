@@ -66,10 +66,10 @@ export class PlayerProfile {
 
   @Column({
     type: 'enum',
-    enum: ['available', 'unavailable', 'open_to_offers'],
+    enum: ['available', 'trialing', 'contracted'],
     nullable: true,
   })
-  availability_status?: 'available' | 'unavailable' | 'open_to_offers';
+  availability_status?: 'available' | 'trialing' | 'contracted';
 
   @Column({ nullable: true })
   club_name?: string;
