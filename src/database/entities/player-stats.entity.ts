@@ -1,6 +1,6 @@
 import { Column, Entity, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { PlayerProfile } from './playerprofile.entity';
+import { PlayerProfile } from './player-profile.entity';
 
 @Entity('player_stats')
 export class PlayerStats extends BaseEntity {

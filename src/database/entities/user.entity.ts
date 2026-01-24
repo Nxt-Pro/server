@@ -1,7 +1,5 @@
 import { Column, Entity, OneToOne } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { PlayerProfile } from './playerprofile.entity';
-import { ScoutProfile } from './scoutprofile.entity';
+import { BaseEntity, PlayerProfile, ScoutProfile } from '.';
 
 @Entity('users')
 export class User extends BaseEntity {
@@ -21,9 +19,15 @@ export class User extends BaseEntity {
   })
   status: 'active' | 'suspended' | 'banned';
 
-  @OneToOne(() => PlayerProfile, profile => profile.user)
+  @Column({ nullable: true })
+  phone?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  last_active?: Date;
+
+  @OneToOne(() => PlayerProfile, profile => profile.user, { nullable: true })
   playerProfile?: PlayerProfile;
 
-  @OneToOne(() => ScoutProfile, profile => profile.user)
+  @OneToOne(() => ScoutProfile, profile => profile.user, { nullable: true })
   scoutProfile?: ScoutProfile;
 }

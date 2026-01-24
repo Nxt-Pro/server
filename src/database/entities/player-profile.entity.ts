@@ -1,7 +1,5 @@
 import { Column, Entity, JoinColumn, OneToMany, OneToOne } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { CareerTimeline, PlayerStats } from './playerhistory.entity';
-import { User } from './user.entity';
+import { BaseEntity, CareerTimeline, PlayerStats, User } from '.';
 
 @Entity('player_profiles')
 export class PlayerProfile extends BaseEntity {
