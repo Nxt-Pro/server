@@ -5,14 +5,14 @@ import { BaseEntity, PlayerProfile, ScoutProfile } from '.';
 @Index(['id'])
 @Index(['email'])
 @Index(['role'])
-@Index(['last_active'])
-@Index(['status', 'last_active'])
+@Index(['lastActive'])
+@Index(['status', 'lastActive'])
 export class User extends BaseEntity {
   @Column({ unique: true })
   email: string;
 
-  @Column({ select: false }) // Hide password by default
-  password_hash: string;
+  @Column({ select: false, name: 'password_hash' }) // Hide password by default
+  passwordHash: string;
 
   @Column({ type: 'enum', enum: ['player', 'scout', 'admin'] })
   role: 'player' | 'scout' | 'admin';
@@ -27,8 +27,8 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   phone?: string;
 
-  @Column({ type: 'timestamp', nullable: true })
-  last_active?: Date;
+  @Column({ type: 'timestamp', nullable: true, name: 'last_active' })
+  lastActive?: Date;
 
   @OneToOne(() => PlayerProfile, profile => profile.user, { nullable: true })
   playerProfile?: PlayerProfile;

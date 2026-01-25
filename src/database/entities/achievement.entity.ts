@@ -3,12 +3,12 @@ import { BaseEntity } from './base.entity';
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('achievements')
-@Index(['player_id'])
+@Index(['playerId'])
 @Index(['year'])
-@Index(['competition_level'])
+@Index(['competitionLevel'])
 export class Achievement extends BaseEntity {
-  @Column({ type: 'varchar', length: 26 })
-  player_id: string;
+  @Column({ type: 'varchar', length: 26, name: 'player_id' })
+  playerId: string;
 
   @ManyToOne(() => PlayerProfile, profile => profile.achievements)
   @JoinColumn({ name: 'player_id' })
@@ -26,11 +26,12 @@ export class Achievement extends BaseEntity {
   @Column({
     type: 'enum',
     enum: ['local', 'regional', 'national', 'international'],
+    name: 'competition_level',
   })
-  competition_level: 'local' | 'regional' | 'national' | 'international';
+  competitionLevel: 'local' | 'regional' | 'national' | 'international';
 
-  @Column({ nullable: true })
-  evidence_url?: string;
+  @Column({ nullable: true, name: 'evidence_url' })
+  evidenceUrl?: string;
 
   @Column({ default: false })
   verified: boolean;

@@ -11,12 +11,12 @@ import {
 import { User } from './user.entity';
 
 @Entity('scout_profiles')
-@Index(['user_id'])
-@Index(['verification_status'])
-@Index(['organization_type'])
+@Index(['userId'])
+@Index(['verificationStatus'])
+@Index(['organizationType'])
 export class ScoutProfile {
-  @PrimaryColumn('char', { length: 26 })
-  user_id: string;
+  @PrimaryColumn('char', { length: 26, name: 'user_id' })
+  userId: string;
 
   @OneToOne(() => User, user => user.scoutProfile)
   @JoinColumn({ name: 'user_id' })
@@ -28,46 +28,57 @@ export class ScoutProfile {
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @Column()
-  full_name: string;
+  @Column({ name: 'full_name' })
+  fullName: string;
 
   @Column()
   organization: string;
 
-  @Column({ type: 'enum', enum: ['club', 'agency', 'independent'] })
-  organization_type: 'club' | 'agency' | 'independent';
+  @Column({
+    type: 'enum',
+    enum: ['club', 'agency', 'independent'],
+    name: 'organization_type',
+  })
+  organizationType: 'club' | 'agency' | 'independent';
 
-  @Column({ nullable: true })
-  license_number?: string;
+  @Column({ nullable: true, name: 'license_number' })
+  licenseNumber?: string;
 
-  @Column({ type: 'simple-array', nullable: true })
-  scouting_positions?: string[];
+  @Column({ type: 'simple-array', nullable: true, name: 'scouting_positions' })
+  scoutingPositions?: string[];
 
-  @Column({ type: 'int', nullable: true })
-  years_experience?: number;
+  @Column({ type: 'int', nullable: true, name: 'years_experience' })
+  yearsExperience?: number;
 
-  @Column({ type: 'simple-array', nullable: true })
-  countries_covered?: string[];
+  @Column({ type: 'simple-array', nullable: true, name: 'countries_covered' })
+  countriesCovered?: string[];
 
   @Column({ type: 'text', nullable: true })
   bio?: string;
 
-  @Column({ nullable: true })
-  profile_picture_url?: string;
+  @Column({ nullable: true, name: 'profile_picture_url' })
+  profilePictureUrl?: string;
 
-  @Column({ type: 'int', default: 0 })
-  total_notes: number;
+  @Column({ type: 'int', default: 0, name: 'total_notes' })
+  totalNotes: number;
 
   @Column({
     type: 'enum',
     enum: ['pending', 'verified', 'rejected'],
     default: 'pending',
+    name: 'verification_status',
   })
-  verification_status: 'pending' | 'verified' | 'rejected';
+  verificationStatus: 'pending' | 'verified' | 'rejected';
 
-  @Column({ type: 'jsonb', nullable: true })
-  verification_documents?: Record<string, unknown>;
+  @Column({ type: 'jsonb', nullable: true, name: 'verification_documents' })
+  verificationDocuments?: Record<string, unknown>;
 
-  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0 })
-  profile_completeness: number;
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0,
+    name: 'profile_completeness',
+  })
+  profileCompleteness: number;
 }

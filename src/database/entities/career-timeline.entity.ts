@@ -3,11 +3,11 @@ import { BaseEntity } from './base.entity';
 import { PlayerProfile } from '.';
 
 @Entity('career_timeline')
-@Index(['player_id'])
-@Index(['start_date', 'is_current'])
+@Index(['playerId'])
+@Index(['startDate', 'isCurrent'])
 export class CareerTimeline extends BaseEntity {
-  @Column({ type: 'varchar', length: 26 })
-  player_id: string;
+  @Column({ type: 'varchar', length: 26, name: 'player_id' })
+  playerId: string;
 
   @ManyToOne(() => PlayerProfile, profile => profile.career_timeline)
   @JoinColumn({ name: 'player_id' })
@@ -16,18 +16,18 @@ export class CareerTimeline extends BaseEntity {
   @Column()
   title: string;
 
-  @Column({ type: 'date' })
-  start_date: Date;
+  @Column({ type: 'date', name: 'start_date' })
+  startDate: Date;
 
-  @Column({ type: 'date', nullable: true })
-  end_date?: Date;
+  @Column({ type: 'date', nullable: true, name: 'end_date' })
+  endDate?: Date;
 
   @Column({ type: 'text', nullable: true })
   description?: string;
 
-  @Column({ default: false })
-  is_current: boolean;
+  @Column({ default: false, name: 'is_current' })
+  isCurrent: boolean;
 
-  @Column({ nullable: true })
-  evidence_url?: string;
+  @Column({ nullable: true, name: 'evidence_url' })
+  evidenceUrl?: string;
 }

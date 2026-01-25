@@ -11,11 +11,11 @@ import {
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('player_stats')
-@Index(['player_id', 'season_year'])
-@Index(['avg_rating'])
+@Index(['playerId', 'seasonYear'])
+@Index(['avgRating'])
 export class PlayerStats {
-  @PrimaryColumn('char', { length: 26 })
-  player_id: string;
+  @PrimaryColumn('char', { length: 26, name: 'player_id' })
+  playerId: string;
 
   @ManyToOne(() => PlayerProfile, profile => profile.stats)
   @JoinColumn({ name: 'player_id' })
@@ -33,21 +33,27 @@ export class PlayerStats {
   @Column()
   assists: number;
 
-  @Column()
-  season_year: number;
+  @Column({ name: 'season_year' })
+  seasonYear: number;
 
-  @Column({ type: 'int', default: 0 })
-  matches_played: number;
+  @Column({ type: 'int', default: 0, name: 'matches_played' })
+  matchesPlayed: number;
 
-  @Column({ type: 'int', default: 0 })
-  yellow_cards: number;
+  @Column({ type: 'int', default: 0, name: 'yellow_cards' })
+  yellowCards: number;
 
-  @Column({ type: 'int', default: 0 })
-  red_cards: number;
+  @Column({ type: 'int', default: 0, name: 'red_cards' })
+  redCards: number;
 
-  @Column({ type: 'int', default: 0 })
-  clean_sheets: number;
+  @Column({ type: 'int', default: 0, name: 'clean_sheets' })
+  cleanSheets: number;
 
-  @Column({ type: 'decimal', precision: 3, scale: 2, nullable: true })
-  avg_rating?: number;
+  @Column({
+    type: 'decimal',
+    precision: 3,
+    scale: 2,
+    nullable: true,
+    name: 'avg_rating',
+  })
+  avgRating?: number;
 }
