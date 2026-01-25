@@ -1,5 +1,6 @@
-import { Column, Entity, Index, Unique } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { User } from './user.entity';
 
 @Entity('bookmarks')
 @Unique(['userId', 'bookmarkableId', 'bookmarkableType'])
@@ -20,7 +21,7 @@ export class Bookmark extends BaseEntity {
   })
   bookmarkableType: 'post' | 'player' | 'scout' | 'event';
 
-  // @ManyToOne(() => User, user => user.bookmarks, { onDelete: 'CASCADE' })
-  // @JoinColumn({ name: 'user_id' })
-  // user: User;
+  @ManyToOne(() => User, user => user.bookmarks, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 }

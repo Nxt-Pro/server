@@ -1,12 +1,11 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Post } from './post.entity';
+import { User } from './user.entity';
 
 @Entity('likes')
 @Unique(['userId', 'postId'])
 @Index(['postId'])
-@Index(['userId'])
-@Index(['userId', 'postId'])
 export class Like extends BaseEntity {
   @Column('char', {
     length: 26,
@@ -20,11 +19,11 @@ export class Like extends BaseEntity {
   })
   postId: string;
 
-  // @ManyToOne(() => User, user => user.likes, {
-  //   onDelete: 'CASCADE',
-  // })
-  // @JoinColumn({ name: 'user_id' })
-  // user: User;
+  @ManyToOne(() => User, user => user.likes, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 
   @ManyToOne(() => Post, post => post.likes, {
     onDelete: 'CASCADE',

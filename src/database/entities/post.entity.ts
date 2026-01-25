@@ -1,8 +1,16 @@
-import { Column, Entity, Index, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { Attachment } from './attachment.entity';
 import { BaseEntity } from './base.entity';
 import { Comment } from './comment.entity';
 import { Like } from './like.entity';
+import { User } from './user.entity';
 
 @Entity('posts')
 @Index(['userId', 'createdAt'])
@@ -64,9 +72,9 @@ export class Post extends BaseEntity {
   })
   isReported: boolean;
 
-  // @ManyToOne(() => User, user => user.posts, { onDelete: 'CASCADE' })
-  // @JoinColumn({ name: 'user_id' })
-  // user: User;
+  @ManyToOne(() => User, user => user.posts, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 
   @OneToMany(() => Attachment, attachment => attachment.post, {
     cascade: true,

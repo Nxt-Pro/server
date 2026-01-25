@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Post } from './post.entity';
+import { User } from './user.entity';
 
 @Entity('comments')
 @Index(['postId', 'createdAt'])
@@ -42,11 +43,11 @@ export class Comment extends BaseEntity {
   })
   isReported: boolean;
 
-  // @ManyToOne(() => User, user => user.comments, {
-  //   onDelete: 'CASCADE',
-  // })
-  // @JoinColumn({ name: 'user_id' })
-  // user: User;
+  @ManyToOne(() => User, user => user.comments, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 
   @ManyToOne(() => Post, post => post.comments, {
     onDelete: 'CASCADE',

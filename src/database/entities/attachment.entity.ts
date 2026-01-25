@@ -1,7 +1,6 @@
 import {
   Column,
   Entity,
-  Index,
   JoinColumn,
   ManyToOne,
   OneToOne,
@@ -14,7 +13,6 @@ import { Video } from './video.entity';
 
 @Entity('attachments')
 @Unique(['postId', 'position'])
-@Index(['postId', 'position'])
 export class Attachment extends BaseEntity {
   @Column('char', {
     length: 26,
