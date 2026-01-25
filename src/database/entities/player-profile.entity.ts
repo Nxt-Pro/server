@@ -18,19 +18,11 @@ import { Achievement, CareerTimeline, PlayerStats, User } from '.';
 @Index(['city', 'country'])
 @Index(['position', 'availabilityStatus', 'aiScore'])
 export class PlayerProfile {
+  // --- Primary Key & Foreign Key ---
   @PrimaryColumn('char', { length: 26, name: 'user_id' })
   userId: string;
 
-  @OneToOne(() => User, user => user.playerProfile)
-  @JoinColumn({ name: 'user_id' })
-  user: User;
-
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
-  updatedAt: Date;
-
+  // --- Basic Info ---
   @Column({ name: 'full_name' })
   fullName: string;
 
@@ -38,7 +30,19 @@ export class PlayerProfile {
   dateOfBirth: Date;
 
   @Column({ nullable: true })
+  nationality?: string;
+
+  // --- Physical Attributes ---
+  @Column({ nullable: true })
   position?: string;
+
+  @Column({
+    type: 'enum',
+    enum: ['left', 'right', 'both'],
+    nullable: true,
+    name: 'preferred_foot',
+  })
+  preferredFoot?: 'left' | 'right' | 'both';
 
   @Column({
     type: 'decimal',
@@ -58,23 +62,16 @@ export class PlayerProfile {
   })
   weightKg?: number;
 
-  @Column({ nullable: true })
-  nationality?: string;
-
+  // --- Location ---
   @Column({ nullable: true })
   city?: string;
 
   @Column({ nullable: true })
   country?: string;
 
-  @Column({ type: 'text', nullable: true })
-  bio?: string;
-
-  @Column({ nullable: true, name: 'profile_picture_url' })
-  profilePictureUrl?: string;
-
-  @Column({ type: 'simple-array', nullable: true, name: 'secondary_positions' })
-  secondaryPositions: string[];
+  // --- Career & Club ---
+  @Column({ nullable: true, name: 'club_name' })
+  clubName?: string;
 
   @Column({
     type: 'enum',
@@ -84,17 +81,27 @@ export class PlayerProfile {
   })
   availabilityStatus?: 'available' | 'trialing' | 'contracted';
 
-  @Column({ nullable: true, name: 'club_name' })
-  clubName?: string;
+  @Column({ type: 'simple-array', nullable: true, name: 'secondary_positions' })
+  secondaryPositions: string[];
 
+  // --- Profile & Media ---
+  @Column({ type: 'text', nullable: true })
+  bio?: string;
+
+  @Column({ nullable: true, name: 'profile_picture_url' })
+  profilePictureUrl?: string;
+
+  // --- Performance Metrics ---
   @Column({
-    type: 'enum',
-    enum: ['left', 'right', 'both'],
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
     nullable: true,
-    name: 'preferred_foot',
+    name: 'ai_score',
   })
-  preferredFoot?: 'left' | 'right' | 'both';
+  aiScore: number;
 
+  // --- Engagement & Visibility ---
   @Column({ type: 'int', default: 0, name: 'total_posts' })
   totalPosts: number;
 
@@ -110,16 +117,7 @@ export class PlayerProfile {
   @Column({ type: 'timestamp', nullable: true, name: 'featured_until' })
   featuredUntil?: Date;
 
-  @Column({
-    type: 'decimal',
-    precision: 5,
-    scale: 2,
-    default: 0,
-    name: 'profile_completeness',
-  })
-  profileCompleteness: number;
-
-  // --- Verification Flags & Timestamps ---
+  // --- Verification ---
   @Column({ default: false, name: 'is_verified' })
   isVerified: boolean;
 
@@ -140,17 +138,28 @@ export class PlayerProfile {
     type: 'decimal',
     precision: 5,
     scale: 2,
-    nullable: true,
-    name: 'ai_score',
+    default: 0,
+    name: 'profile_completeness',
   })
-  aiScore: number;
+  profileCompleteness: number;
+
+  // --- Timestamps (from database) ---
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt: Date;
 
   // --- Relations ---
+  @OneToOne(() => User, user => user.playerProfile)
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
   @OneToMany(() => PlayerStats, stats => stats.player)
   stats: PlayerStats[];
 
   @OneToMany(() => CareerTimeline, timeline => timeline.player)
-  career_timeline: CareerTimeline[];
+  careerTimeline: CareerTimeline[];
 
   @OneToMany(() => Achievement, achievement => achievement.player)
   achievements: Achievement[];

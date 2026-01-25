@@ -7,13 +7,11 @@ import { PlayerProfile } from './player-profile.entity';
 @Index(['year'])
 @Index(['competitionLevel'])
 export class Achievement extends BaseEntity {
+  // --- Foreign Key ---
   @Column({ type: 'varchar', length: 26, name: 'player_id' })
   playerId: string;
 
-  @ManyToOne(() => PlayerProfile, profile => profile.achievements)
-  @JoinColumn({ name: 'player_id' })
-  player: PlayerProfile;
-
+  // --- Achievement Info ---
   @Column()
   title: string;
 
@@ -23,6 +21,7 @@ export class Achievement extends BaseEntity {
   @Column({ type: 'int' })
   year: number;
 
+  // --- Competition Level ---
   @Column({
     type: 'enum',
     enum: ['local', 'regional', 'national', 'international'],
@@ -30,9 +29,16 @@ export class Achievement extends BaseEntity {
   })
   competitionLevel: 'local' | 'regional' | 'national' | 'international';
 
+  // --- Verification ---
+  @Column({ default: false })
+  verified: boolean;
+
   @Column({ nullable: true, name: 'evidence_url' })
   evidenceUrl?: string;
 
-  @Column({ default: false })
-  verified: boolean;
+  // --- Relations ---
+  @ManyToOne(() => PlayerProfile, profile => profile.achievements)
+  @JoinColumn({ name: 'player_id' })
+  player: PlayerProfile;
+  // createdAt & updatedAt inherited from BaseEntity
 }
