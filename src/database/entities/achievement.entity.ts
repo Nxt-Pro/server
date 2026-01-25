@@ -1,32 +1,18 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  Index,
-  JoinColumn,
-  ManyToOne,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
+import { BaseEntity } from './base.entity';
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('achievements')
 @Index(['player_id'])
 @Index(['year'])
 @Index(['competition_level'])
-export class Achievement {
-  @PrimaryColumn('char', { length: 26 })
+export class Achievement extends BaseEntity {
+  @Column({ type: 'varchar', length: 26 })
   player_id: string;
 
   @ManyToOne(() => PlayerProfile, profile => profile.achievements)
   @JoinColumn({ name: 'player_id' })
   player: PlayerProfile;
-
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
-  updatedAt: Date;
 
   @Column()
   title: string;
