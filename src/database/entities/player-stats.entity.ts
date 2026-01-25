@@ -1,21 +1,13 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  Index,
-  JoinColumn,
-  ManyToOne,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
+import { BaseEntity } from './base.entity';
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('player_stats')
-@Index(['playerId', 'seasonYear'])
+@Unique(['playerId', 'seasonYear'])
 @Index(['avgRating'])
-export class PlayerStats {
-  // --- Primary Key & Foreign Key ---
-  @PrimaryColumn('char', { length: 26, name: 'player_id' })
+export class PlayerStats extends BaseEntity {
+  // --- Foreign Key ---
+  @Column('char', { length: 26, name: 'player_id' })
   playerId: string;
 
   // --- Season & Context ---
@@ -23,10 +15,10 @@ export class PlayerStats {
   seasonYear: number;
 
   // --- Offensive Stats ---
-  @Column()
+  @Column({ default: 0, name: 'goals' })
   goals: number;
 
-  @Column()
+  @Column({ default: 0, name: 'assists' })
   assists: number;
 
   // --- Match Stats ---
@@ -53,15 +45,10 @@ export class PlayerStats {
   })
   avgRating?: number;
 
-  // --- Timestamps ---
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
-  updatedAt: Date;
-
   // --- Relations ---
-  @ManyToOne(() => PlayerProfile, profile => profile.stats)
+  @ManyToOne(() => PlayerProfile, profile => profile.stats, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'player_id' })
   player: PlayerProfile;
 }

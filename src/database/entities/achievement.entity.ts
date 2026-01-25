@@ -3,9 +3,8 @@ import { BaseEntity } from './base.entity';
 import { PlayerProfile } from './player-profile.entity';
 
 @Entity('achievements')
-@Index(['playerId'])
-@Index(['year'])
 @Index(['competitionLevel'])
+@Index(['playerId', 'year'])
 export class Achievement extends BaseEntity {
   // --- Foreign Key ---
   @Column({ type: 'varchar', length: 26, name: 'player_id' })

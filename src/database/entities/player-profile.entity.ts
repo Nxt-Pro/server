@@ -9,7 +9,10 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Achievement, CareerTimeline, PlayerStats, User } from '.';
+import { Achievement } from './achievement.entity';
+import { CareerTimeline } from './career-timeline.entity';
+import { PlayerStats } from './player-stats.entity';
+import { User } from './user.entity';
 
 @Entity('player_profiles')
 @Index(['userId'])
@@ -35,6 +38,14 @@ export class PlayerProfile {
   // --- Physical Attributes ---
   @Column({ nullable: true })
   position?: string;
+
+  @Column({
+    type: 'varchar',
+    array: true,
+    nullable: true,
+    name: 'secondary_positions',
+  })
+  secondaryPositions?: string[];
 
   @Column({
     type: 'enum',
@@ -81,9 +92,6 @@ export class PlayerProfile {
   })
   availabilityStatus?: 'available' | 'trialing' | 'contracted';
 
-  @Column({ type: 'simple-array', nullable: true, name: 'secondary_positions' })
-  secondaryPositions: string[];
-
   // --- Profile & Media ---
   @Column({ type: 'text', nullable: true })
   bio?: string;
@@ -99,7 +107,7 @@ export class PlayerProfile {
     nullable: true,
     name: 'ai_score',
   })
-  aiScore: number;
+  aiScore?: number;
 
   // --- Engagement & Visibility ---
   @Column({ type: 'int', default: 0, name: 'total_posts' })
@@ -114,25 +122,25 @@ export class PlayerProfile {
   @Column({ default: false, name: 'is_featured' })
   isFeatured: boolean;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'featured_until' })
+  @Column({ type: 'timestamptz', nullable: true, name: 'featured_until' })
   featuredUntil?: Date;
 
   // --- Verification ---
   @Column({ default: false, name: 'is_verified' })
   isVerified: boolean;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'basic_verified_at' })
-  basicVerifiedAt: Date;
+  @Column({ type: 'timestamptz', nullable: true, name: 'basic_verified_at' })
+  basicVerifiedAt?: Date;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'club_verified_at' })
-  clubVerifiedAt: Date;
+  @Column({ type: 'timestamptz', nullable: true, name: 'club_verified_at' })
+  clubVerifiedAt?: Date;
 
   @Column({
-    type: 'timestamp',
+    type: 'timestamptz',
     nullable: true,
     name: 'performance_verified_at',
   })
-  performanceVerifiedAt: Date;
+  performanceVerifiedAt?: Date;
 
   @Column({
     type: 'decimal',

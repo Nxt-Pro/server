@@ -1,8 +1,14 @@
-import { Column, Entity, Index, OneToOne } from 'typeorm';
-import { BaseEntity, PlayerProfile, ScoutProfile } from '.';
+import { Column, Entity, Index, OneToMany, OneToOne } from 'typeorm';
+import { BaseEntity } from './base.entity';
+import { Bookmark } from './bookmark.entity';
+import { Comment } from './comment.entity';
+import { Favorite } from './favorite.entity';
+import { Like } from './like.entity';
+import { PlayerProfile } from './player-profile.entity';
+import { Post } from './post.entity';
+import { ScoutProfile } from './scout-profile.entity';
 
 @Entity('users')
-@Index(['id'])
 @Index(['email'])
 @Index(['role'])
 @Index(['lastActive'])
@@ -30,7 +36,7 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   phone?: string;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'last_active' })
+  @Column({ type: 'timestamptz', nullable: true, name: 'last_active' })
   lastActive?: Date;
 
   // --- Relations ---
@@ -39,5 +45,20 @@ export class User extends BaseEntity {
 
   @OneToOne(() => ScoutProfile, profile => profile.user, { nullable: true })
   scoutProfile?: ScoutProfile;
+
+  @OneToMany(() => Favorite, favorite => favorite.user)
+  favorites: Favorite[];
+
+  @OneToMany(() => Post, post => post.user)
+  posts: Post[];
+
+  @OneToMany(() => Comment, comment => comment.user)
+  comments: Comment[];
+
+  @OneToMany(() => Like, like => like.user)
+  likes: Like[];
+
+  @OneToMany(() => Bookmark, bookmark => bookmark.user)
+  bookmarks: Bookmark[];
   // createdAt & updatedAt inherited from BaseEntity
 }

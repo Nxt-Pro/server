@@ -1,6 +1,6 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { PlayerProfile } from '.';
+import { PlayerProfile } from './player-profile.entity';
 
 @Entity('career_timeline')
 @Index(['playerId'])
