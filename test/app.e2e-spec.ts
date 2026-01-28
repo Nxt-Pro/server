@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';

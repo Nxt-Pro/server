@@ -3,6 +3,7 @@
   "compilerOptions": {
     "target": "ES2023",
     "module": "nodenext",
+    "types": ["jest"],
     "moduleResolution": "nodenext",
     "resolvePackageJsonExports": true,
     "esModuleInterop": true,
