@@ -13,8 +13,9 @@ import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
 import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
-import { ConfigValidatorService } from '@/validators';
+import { ChatModule } from '@/modules/chat';
 import { HealthModule } from '@/modules/health/health.module';
+import { ConfigValidatorService } from '@/validators';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { HealthModule } from '@/modules/health/health.module';
 
     // Feature modules
     HealthModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [
