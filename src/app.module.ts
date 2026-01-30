@@ -14,7 +14,9 @@ import { DatabaseModule } from './database/database.module';
 import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
 import { ChatModule } from '@/modules/chat';
+import { EventsModule } from '@/modules/events';
 import { HealthModule } from '@/modules/health/health.module';
+import { VenuesModule } from '@/modules/venues';
 import { ConfigValidatorService } from '@/validators';
 
 @Module({
@@ -44,6 +46,8 @@ import { ConfigValidatorService } from '@/validators';
     // Feature modules
     HealthModule,
     ChatModule,
+    EventsModule,
+    VenuesModule,
   ],
   controllers: [AppController],
   providers: [
