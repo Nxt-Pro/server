@@ -1,11 +1,4 @@
 import {
-  Event,
-  EventRegistration,
-  PlayerProfile,
-  User,
-  Venue,
-} from '@/database/entities';
-import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -14,6 +7,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateEventDto, UpdateEventDto, UpdateRegistrationDto } from './dtos';
+import {
+  Event,
+  EventRegistration,
+  PlayerProfile,
+  User,
+  Venue,
+} from '@/database/entities';
 
 @Injectable()
 export class EventsService {
@@ -217,7 +217,11 @@ export class EventsService {
     const saved = await this.registrationRepository.save(registration);
 
     // Update participant count without touching relations
-    await this.eventRepository.increment({ id: eventId }, 'participantCount', 1);
+    await this.eventRepository.increment(
+      { id: eventId },
+      'participantCount',
+      1,
+    );
 
     return saved;
   }

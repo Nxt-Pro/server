@@ -1,6 +1,9 @@
-import { Venue } from '@/database/entities';
 import { NotFoundException } from '@nestjs/common';
-import { VenuesService } from './venues.service';
+import { Repository } from 'typeorm';
+import { VenuesService } from '../../../src/modules/venues/venues.service';
+import { Venue } from '@/database/entities';
+
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/unbound-method */
 
 const createQueryBuilderMock = () => {
   const qb = {
@@ -15,23 +18,24 @@ const createQueryBuilderMock = () => {
 };
 
 describe('VenuesService', () => {
-  const venueRepository = {
-    create: jest.fn(),
-    save: jest.fn(),
-    findOne: jest.fn(),
-    createQueryBuilder: jest.fn(),
-    remove: jest.fn(),
-  };
-
   let service: VenuesService;
+  let venueRepository: Repository<Venue>;
 
   beforeEach(() => {
+    venueRepository = {
+      create: jest.fn(),
+      save: jest.fn(),
+      findOne: jest.fn(),
+      createQueryBuilder: jest.fn(),
+      remove: jest.fn(),
+    } as unknown as Repository<Venue>;
+
     jest.clearAllMocks();
-    service = new VenuesService(venueRepository as any);
+    service = new VenuesService(venueRepository);
   });
 
   it('creates a venue', async () => {
-    const dto = { name: 'Stadium', address: 'Address' } as any;
+    const dto = { name: 'Stadium', address: 'Address' };
     const venue = { id: 'venue-1' } as Venue;
 
     venueRepository.create.mockReturnValue(venue);

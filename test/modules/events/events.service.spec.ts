@@ -1,6 +1,9 @@
-import { Event, EventRegistration, PlayerProfile } from '@/database/entities';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { EventsService } from './events.service';
+import { Repository } from 'typeorm';
+import { EventsService } from '../../../src/modules/events/events.service';
+import { Event, EventRegistration, PlayerProfile } from '@/database/entities';
+
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/unbound-method */
 
 const createQueryBuilderMock = () => {
   const qb = {
@@ -17,30 +20,29 @@ const createQueryBuilderMock = () => {
 };
 
 describe('EventsService', () => {
-  const eventRepository = {
-    create: jest.fn(),
-    save: jest.fn(),
-    findOne: jest.fn(),
-    createQueryBuilder: jest.fn(),
-    remove: jest.fn(),
-    increment: jest.fn(),
-  };
-
-  const registrationRepository = {
-    create: jest.fn(),
-    save: jest.fn(),
-    findOne: jest.fn(),
-    createQueryBuilder: jest.fn(),
-  };
-
   let service: EventsService;
+  let eventRepository: Repository<Event>;
+  let registrationRepository: Repository<EventRegistration>;
 
   beforeEach(() => {
+    eventRepository = {
+      create: jest.fn(),
+      save: jest.fn(),
+      findOne: jest.fn(),
+      createQueryBuilder: jest.fn(),
+      remove: jest.fn(),
+      increment: jest.fn(),
+    } as unknown as Repository<Event>;
+
+    registrationRepository = {
+      create: jest.fn(),
+      save: jest.fn(),
+      findOne: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    } as unknown as Repository<EventRegistration>;
+
     jest.clearAllMocks();
-    service = new EventsService(
-      eventRepository as any,
-      registrationRepository as any,
-    );
+    service = new EventsService(eventRepository, registrationRepository);
   });
 
   it('creates event with organizer and defaults', async () => {
@@ -52,7 +54,7 @@ describe('EventsService', () => {
       endDate: new Date().toISOString(),
       startTime: '10:00:00',
       venueId: 'venue-1',
-    } as any;
+    };
 
     const created = { id: 'event-1' } as Event;
     eventRepository.create.mockReturnValue(created);
@@ -97,9 +99,9 @@ describe('EventsService', () => {
     const event = { id: 'event-1', status: 'pending_approval' } as Event;
     eventRepository.findOne.mockResolvedValue(event);
 
-    await expect(service.registerForEvent('event-1', 'player-1')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.registerForEvent('event-1', 'player-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('registers player and increments participant count', async () => {

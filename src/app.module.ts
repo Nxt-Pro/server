@@ -15,7 +15,7 @@ import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
 import { ChatModule } from '@/modules/chat';
 import { EventsModule } from '@/modules/events';
-import { HealthModule } from '@/modules/health/health.module';
+import { HealthModule } from '@/modules/health';
 import { VenuesModule } from '@/modules/venues';
 import { ConfigValidatorService } from '@/validators';
 
