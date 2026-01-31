@@ -43,7 +43,10 @@ export class VenuesController {
   }
 
   @Patch(':id')
-  async updateVenue(@Param('id') venueId: string, @Body() dto: UpdateVenueDto) {
+  async updateVenue(
+    @Param('id') venueId: string,
+    @Body() dto: Partial<CreateVenueDto>,
+  ) {
     return this.venuesService.updateVenue(venueId, dto);
   }
 

@@ -5,13 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Equal, Repository } from 'typeorm';
 import { CreateEventDto, UpdateEventDto, UpdateRegistrationDto } from './dtos';
 import {
   Event,
   EventRegistration,
   PlayerProfile,
   User,
+  Venue,
 } from '@/database/entities';
 
 @Injectable()
@@ -125,7 +126,7 @@ export class EventsService {
     Object.assign(event, dto);
 
     if (dto.venueId) {
-      event.venue = { id: dto.venueId } as Partial<Event['venue']>;
+      event.venue = { id: dto.venueId } as Venue;
     }
 
     return this.eventRepository.save(event);
@@ -193,7 +194,7 @@ export class EventsService {
     const existing = await this.registrationRepository.findOne({
       where: {
         event: { id: eventId },
-        player: { userId: playerId } as Partial<PlayerProfile>,
+        player: { userId: Equal(playerId) },
       },
     });
 
