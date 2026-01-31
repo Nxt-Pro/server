@@ -1,19 +1,19 @@
 import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Equal, Repository } from 'typeorm';
-import { CreateEventDto, UpdateEventDto, UpdateRegistrationDto } from './dtos';
-import {
   Event,
   EventRegistration,
   PlayerProfile,
   User,
   Venue,
 } from '@/database/entities';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { CreateEventDto, UpdateEventDto, UpdateRegistrationDto } from './dtos';
 
 @Injectable()
 export class EventsService {
@@ -45,7 +45,7 @@ export class EventsService {
       .leftJoinAndSelect('event.organizer', 'organizer')
       .where('event.status = :status', { status: 'approved' })
       .andWhere('event.start_date >= :now', { now: new Date() })
-      .orderBy('event.start_date', 'ASC')
+      .orderBy('event.startDate', 'ASC')
       .take(limit)
       .getMany();
   }
@@ -91,7 +91,7 @@ export class EventsService {
       });
     }
 
-    qb.orderBy('event.start_date', 'DESC')
+    qb.orderBy('event.startDate', 'DESC')
       .skip(query.offset || 0)
       .take(query.limit || 20);
 
@@ -170,7 +170,13 @@ export class EventsService {
     eventId: string,
     playerId: string,
   ): Promise<EventRegistration> {
-    const event = await this.getEventById(eventId);
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
 
     if (event.status !== 'approved') {
       throw new BadRequestException('Event is not approved');
@@ -191,12 +197,11 @@ export class EventsService {
     }
 
     // Check if already registered
-    const existing = await this.registrationRepository.findOne({
-      where: {
-        event: { id: eventId },
-        player: { userId: Equal(playerId) },
-      },
-    });
+    const existing = await this.registrationRepository
+      .createQueryBuilder('registration')
+      .where('registration.event_id = :eventId', { eventId })
+      .andWhere('registration.player_id = :playerId', { playerId })
+      .getOne();
 
     if (existing) {
       throw new BadRequestException('Already registered for this event');
@@ -211,9 +216,8 @@ export class EventsService {
 
     const saved = await this.registrationRepository.save(registration);
 
-    // Update participant count
-    event.participantCount += 1;
-    await this.eventRepository.save(event);
+    // Update participant count without touching relations
+    await this.eventRepository.increment({ id: eventId }, 'participantCount', 1);
 
     return saved;
   }
@@ -265,9 +269,14 @@ export class EventsService {
     registration.cancelled = true;
     await this.registrationRepository.save(registration);
 
-    // Update participant count
-    const event = await this.getEventById(registration.event.id);
-    event.participantCount = Math.max(0, event.participantCount - 1);
-    await this.eventRepository.save(event);
+    // Update participant count without touching relations
+    await this.eventRepository
+      .createQueryBuilder()
+      .update(Event)
+      .set({
+        participantCount: () => 'GREATEST(participant_count - 1, 0)',
+      })
+      .where('id = :id', { id: registration.event.id })
+      .execute();
   }
 }
