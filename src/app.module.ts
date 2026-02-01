@@ -20,6 +20,7 @@ import { EventsModule } from '@/modules/events';
 import { HealthModule } from '@/modules/health';
 import { NotificationsModule } from '@/modules/notifications';
 import { VenuesModule } from '@/modules/venues';
+import { FirebaseModule } from '@/modules/firebase/firebase.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { VenuesModule } from '@/modules/venues';
     EventsModule,
     VenuesModule,
     NotificationsModule,
+    FirebaseModule,
   ],
   controllers: [AppController],
   providers: [

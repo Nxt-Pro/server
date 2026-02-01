@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import { NotificationsGateway } from './notifications.gateway';
-import { Notification } from '@/database/entities';
+import { FirebaseService } from '@/modules/firebase/firebase.service';
+import { Notification, User } from '@/database/entities';
 
 export interface CreateNotificationEvent {
   userId: string;
@@ -27,7 +27,9 @@ export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepo: Repository<Notification>,
-    private readonly notificationsGateway: NotificationsGateway,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
   /**
@@ -52,11 +54,24 @@ export class NotificationsService {
 
       const savedNotification = await this.notificationRepo.save(notification);
 
-      // 2. Send Real-Time Update
-      this.notificationsGateway.sendNotificationToUser(
-        payload.userId,
-        savedNotification,
-      );
+      // 2. Send Real-Time Update (Via Firebase)
+      const user = await this.userRepo.findOne({
+        where: { id: payload.userId },
+        select: ['fcmTokens'],
+      });
+
+      if (user && user.fcmTokens && user.fcmTokens.length > 0) {
+        await this.firebaseService.sendMulticastNotification(
+          user.fcmTokens,
+          payload.title,
+          payload.message,
+          {
+            type: payload.type,
+            referenceId: payload.referenceId || '',
+            notificationId: savedNotification.id,
+          },
+        );
+      }
     } catch (error) {
       this.logger.error('Failed to create notification', error);
     }
@@ -87,5 +102,33 @@ export class NotificationsService {
       { user: { id: userId }, read_at: IsNull() },
       { read_at: new Date() },
     );
+  }
+
+  async registerDeviceToken(userId: string, token: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'fcmTokens'],
+    });
+
+    if (!user) return;
+
+    // Use Set to ensure uniqueness
+    const tokens = new Set(user.fcmTokens || []);
+    tokens.add(token);
+
+    user.fcmTokens = Array.from(tokens);
+    await this.userRepo.save(user);
+  }
+
+  async removeDeviceToken(userId: string, token: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'fcmTokens'],
+    });
+
+    if (!user || !user.fcmTokens) return;
+
+    user.fcmTokens = user.fcmTokens.filter(t => t !== token);
+    await this.userRepo.save(user);
   }
 }

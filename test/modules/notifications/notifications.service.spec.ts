@@ -6,8 +6,8 @@ import {
   CreateNotificationEvent,
   NotificationsService,
 } from '@/modules/notifications/notifications.service';
-import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
-import { Notification } from '@/database/entities';
+import { FirebaseService } from '@/modules/firebase/firebase.service';
+import { Notification, User } from '@/database/entities';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
@@ -17,7 +17,11 @@ describe('NotificationsService', () => {
     find: jest.Mock;
     update: jest.Mock;
   };
-  let gateway: { sendNotificationToUser: jest.Mock };
+  let userRepo: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
+  let firebaseService: { sendMulticastNotification: jest.Mock };
 
   beforeEach(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -31,8 +35,13 @@ describe('NotificationsService', () => {
       update: jest.fn(),
     };
 
-    gateway = {
-      sendNotificationToUser: jest.fn(),
+    userRepo = {
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
+
+    firebaseService = {
+      sendMulticastNotification: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -43,8 +52,12 @@ describe('NotificationsService', () => {
           useValue: notificationRepo,
         },
         {
-          provide: NotificationsGateway,
-          useValue: gateway,
+          provide: getRepositoryToken(User),
+          useValue: userRepo,
+        },
+        {
+          provide: FirebaseService,
+          useValue: firebaseService,
         },
       ],
     }).compile();
@@ -67,9 +80,11 @@ describe('NotificationsService', () => {
 
     const created = { created: true };
     const saved = { id: 'notif_1' };
+    const user = { id: 'user_1', fcmTokens: ['token_1'] };
 
     notificationRepo.create.mockReturnValue(created);
     notificationRepo.save.mockResolvedValue(saved);
+    userRepo.findOne.mockResolvedValue(user);
 
     await service.handleNotificationCreate(payload);
 
@@ -82,9 +97,18 @@ describe('NotificationsService', () => {
     });
 
     expect(notificationRepo.save).toHaveBeenCalledWith(created);
-    expect(gateway.sendNotificationToUser).toHaveBeenCalledWith(
-      payload.userId,
-      saved,
+    expect(userRepo.findOne).toHaveBeenCalledWith({
+      where: { id: payload.userId },
+      select: ['fcmTokens'],
+    });
+    expect(firebaseService.sendMulticastNotification).toHaveBeenCalledWith(
+      ['token_1'],
+      payload.title,
+      payload.message,
+      expect.objectContaining({
+        type: payload.type,
+        notificationId: saved.id,
+      }),
     );
   });
 
@@ -154,6 +178,6 @@ describe('NotificationsService', () => {
     await expect(
       service.handleNotificationCreate(payload),
     ).resolves.toBeUndefined();
-    expect(gateway.sendNotificationToUser).not.toHaveBeenCalled();
+    expect(firebaseService.sendMulticastNotification).not.toHaveBeenCalled();
   });
 });
