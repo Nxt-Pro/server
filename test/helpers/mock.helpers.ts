@@ -18,8 +18,8 @@ export function createQueryBuilderMock<T = unknown>(): QueryBuilderMock<T> {
   qb.where = jest.fn(() => qb as QueryBuilderMock<T>);
   qb.andWhere = jest.fn(() => qb as QueryBuilderMock<T>);
   qb.orderBy = jest.fn(() => qb as QueryBuilderMock<T>);
-  qb.take = jest.fn(() => qb as QueryBuilderMock<T>);
-  qb.skip = jest.fn(() => qb as QueryBuilderMock<T>);
+  qb.take = jest.fn((_take: number) => qb as QueryBuilderMock<T>);
+  qb.skip = jest.fn((_skip: number) => qb as QueryBuilderMock<T>);
   qb.getMany = jest.fn().mockResolvedValue([] as T[]);
   qb.getOne = jest.fn().mockResolvedValue(null as T | null);
 

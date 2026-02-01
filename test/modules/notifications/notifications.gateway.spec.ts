@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
+import {
+  NotificationRealtimePayload,
+  NotificationsGateway,
+} from '@/modules/notifications/notifications.gateway';
 
 describe('NotificationsGateway', () => {
   let gateway: NotificationsGateway;
@@ -51,9 +54,19 @@ describe('NotificationsGateway', () => {
 
     gateway.server = { to } as unknown as Server;
 
-    gateway.sendNotificationToUser('user_1', { id: 'n1' });
+    const payload: NotificationRealtimePayload = {
+      id: 'n1',
+      title: 'T',
+      message: 'M',
+      type: 'like',
+      reference_id: 'r1',
+      read_at: null,
+      createdAt: new Date(),
+    };
+
+    gateway.sendNotificationToUser('user_1', payload);
 
     expect(to).toHaveBeenCalledWith('user_user_1');
-    expect(emit).toHaveBeenCalledWith('new_notification', { id: 'n1' });
+    expect(emit).toHaveBeenCalledWith('new_notification', payload);
   });
 });

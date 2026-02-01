@@ -51,7 +51,7 @@ describe('EventsService', () => {
     const dto = {
       title: 'Test Event',
       description: 'desc',
-      eventType: 'trial',
+      eventType: 'trial' as const,
       startDate: new Date().toISOString(),
       endDate: new Date().toISOString(),
       startTime: '10:00:00',
