@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import {
   HttpExceptionFilter,
@@ -11,16 +12,20 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
+import { ConfigValidatorService } from '@/common/validators';
 import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
-import { ChatModule } from '@/modules/chat';
+import { ChatModule } from '@/modules/chats';
 import { EventsModule } from '@/modules/events';
 import { HealthModule } from '@/modules/health';
+import { NotificationsModule } from '@/modules/notifications';
 import { VenuesModule } from '@/modules/venues';
-import { ConfigValidatorService } from '@/validators';
 
 @Module({
   imports: [
+    // Global Event Emitter
+    EventEmitterModule.forRoot(),
+
     // Configuration (loads all env vars + validates)
     ConfigModule.forRoot({
       isGlobal: true,
@@ -48,6 +53,7 @@ import { ConfigValidatorService } from '@/validators';
     ChatModule,
     EventsModule,
     VenuesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

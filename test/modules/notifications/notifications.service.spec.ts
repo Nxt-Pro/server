@@ -1,0 +1,159 @@
+import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { FindOperator } from 'typeorm';
+import {
+  CreateNotificationEvent,
+  NotificationsService,
+} from '@/modules/notifications/notifications.service';
+import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
+import { Notification } from '@/database/entities';
+
+describe('NotificationsService', () => {
+  let service: NotificationsService;
+  let notificationRepo: {
+    create: jest.Mock;
+    save: jest.Mock;
+    find: jest.Mock;
+    update: jest.Mock;
+  };
+  let gateway: { sendNotificationToUser: jest.Mock };
+
+  beforeEach(async () => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    notificationRepo = {
+      create: jest.fn(),
+      save: jest.fn(),
+      find: jest.fn(),
+      update: jest.fn(),
+    };
+
+    gateway = {
+      sendNotificationToUser: jest.fn(),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsService,
+        {
+          provide: getRepositoryToken(Notification),
+          useValue: notificationRepo,
+        },
+        {
+          provide: NotificationsGateway,
+          useValue: gateway,
+        },
+      ],
+    }).compile();
+
+    service = moduleRef.get(NotificationsService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('handleNotificationCreate saves to DB then emits realtime', async () => {
+    const payload: CreateNotificationEvent = {
+      userId: 'user_1',
+      title: 'New Like',
+      message: 'Someone liked your post',
+      type: 'like',
+      referenceId: 'post_1',
+    };
+
+    const created = { created: true };
+    const saved = { id: 'notif_1' };
+
+    notificationRepo.create.mockReturnValue(created);
+    notificationRepo.save.mockResolvedValue(saved);
+
+    await service.handleNotificationCreate(payload);
+
+    expect(notificationRepo.create).toHaveBeenCalledWith({
+      user: { id: payload.userId },
+      title: payload.title,
+      message: payload.message,
+      type: payload.type,
+      reference_id: payload.referenceId,
+    });
+
+    expect(notificationRepo.save).toHaveBeenCalledWith(created);
+    expect(gateway.sendNotificationToUser).toHaveBeenCalledWith(
+      payload.userId,
+      saved,
+    );
+  });
+
+  it('getUserNotifications queries by userId with pagination and order', async () => {
+    const expected = [{ id: 'n1' }];
+    notificationRepo.find.mockResolvedValue(expected);
+
+    const res = await service.getUserNotifications('user_1', 10, 5);
+
+    expect(notificationRepo.find).toHaveBeenCalledWith({
+      where: { user: { id: 'user_1' } },
+      order: { createdAt: 'DESC' },
+      take: 10,
+      skip: 5,
+    });
+    expect(res).toBe(expected);
+  });
+
+  it('markAsRead updates read_at for that notification + user', async () => {
+    notificationRepo.update.mockResolvedValue({ affected: 1 });
+
+    await expect(service.markAsRead('notif_1', 'user_1')).resolves.toEqual({
+      affected: 1,
+    });
+
+    const [whereArg, updateArg] = (notificationRepo.update.mock.calls[0] ??
+      []) as unknown as [
+      { id: string; user: { id: string } },
+      { read_at: unknown },
+    ];
+
+    expect(whereArg).toEqual({ id: 'notif_1', user: { id: 'user_1' } });
+    expect(updateArg.read_at).toBeInstanceOf(Date);
+  });
+
+  it('markAllAsRead only updates unread notifications (IsNull)', async () => {
+    notificationRepo.update.mockResolvedValue({ affected: 3 });
+
+    await expect(service.markAllAsRead('user_1')).resolves.toEqual({
+      affected: 3,
+    });
+
+    const [whereArg, updateArg] = (notificationRepo.update.mock.calls[0] ??
+      []) as unknown as [
+      { user: { id: string }; read_at: FindOperator<unknown> },
+      { read_at: Date },
+    ];
+
+    expect(whereArg).toMatchObject({ user: { id: 'user_1' } });
+    expect(whereArg.read_at).toBeInstanceOf(FindOperator);
+    expect(whereArg.read_at.type).toBe('isNull');
+
+    expect(updateArg.read_at).toBeInstanceOf(Date);
+  });
+
+  it('handleNotificationCreate swallows errors (logs) and does not throw', async () => {
+    const payload: CreateNotificationEvent = {
+      userId: 'user_1',
+      title: 't',
+      message: 'm',
+      type: 'like',
+    };
+
+    notificationRepo.create.mockReturnValue({});
+    notificationRepo.save.mockRejectedValue(new Error('db fail'));
+
+    await expect(
+      service.handleNotificationCreate(payload),
+    ).resolves.toBeUndefined();
+    expect(gateway.sendNotificationToUser).not.toHaveBeenCalled();
+  });
+});

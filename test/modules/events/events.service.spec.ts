@@ -1,45 +1,47 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { EventsService } from '../../../src/modules/events/events.service';
+import { createQueryBuilderMock } from '../../helpers/mock.helpers';
 import { Event, EventRegistration, PlayerProfile } from '@/database/entities';
-
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/unbound-method */
-
-const createQueryBuilderMock = () => {
-  const qb = {
-    leftJoinAndSelect: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    take: jest.fn().mockReturnThis(),
-    skip: jest.fn().mockReturnThis(),
-    getMany: jest.fn().mockResolvedValue([]),
-  };
-
-  return qb;
-};
 
 describe('EventsService', () => {
   let service: EventsService;
   let eventRepository: Repository<Event>;
   let registrationRepository: Repository<EventRegistration>;
+  let eventRepoMock: {
+    create: jest.Mock;
+    save: jest.Mock;
+    findOne: jest.Mock;
+    createQueryBuilder: jest.Mock;
+    remove: jest.Mock;
+    increment: jest.Mock;
+  };
+  let registrationRepoMock: {
+    create: jest.Mock;
+    save: jest.Mock;
+    findOne: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
 
   beforeEach(() => {
-    eventRepository = {
+    eventRepoMock = {
       create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(),
       remove: jest.fn(),
       increment: jest.fn(),
-    } as unknown as Repository<Event>;
+    };
+    eventRepository = eventRepoMock as unknown as Repository<Event>;
 
-    registrationRepository = {
+    registrationRepoMock = {
       create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(),
-    } as unknown as Repository<EventRegistration>;
+    };
+    registrationRepository =
+      registrationRepoMock as unknown as Repository<EventRegistration>;
 
     jest.clearAllMocks();
     service = new EventsService(eventRepository, registrationRepository);
@@ -57,12 +59,15 @@ describe('EventsService', () => {
     };
 
     const created = { id: 'event-1' } as Event;
-    eventRepository.create.mockReturnValue(created);
-    eventRepository.save.mockResolvedValue(created);
+    eventRepoMock.create.mockReturnValue(created);
+    eventRepoMock.save.mockResolvedValue(created);
 
     const result = await service.createEvent('user-1', dto);
 
-    expect(eventRepository.create).toHaveBeenCalledWith(
+    expect(eventRepoMock.create).toHaveBeenCalled();
+    const eventCreateArgs = (eventRepoMock.create.mock.calls[0] ??
+      []) as unknown as [unknown];
+    expect(eventCreateArgs[0]).toEqual(
       expect.objectContaining({
         organizer: { id: 'user-1' },
         createdBy: { id: 'user-1' },
@@ -79,25 +84,32 @@ describe('EventsService', () => {
     const qb = createQueryBuilderMock();
     const events = [{ id: 'event-1' } as Event];
     qb.getMany.mockResolvedValue(events);
-    eventRepository.createQueryBuilder.mockReturnValue(qb);
+    eventRepoMock.createQueryBuilder.mockReturnValue(qb);
 
     const result = await service.getOngoingEvents(5);
 
     expect(qb.where).toHaveBeenCalledWith('event.status = :status', {
       status: 'approved',
     });
+
     expect(qb.andWhere).toHaveBeenCalledWith(
       'event.start_date >= :now',
-      expect.objectContaining({ now: expect.any(Date) }),
+      expect.any(Object),
     );
+    const andWhereParams = qb.andWhere.mock.calls[0]?.[1] as {
+      now?: unknown;
+    };
+    expect(andWhereParams.now).toBeInstanceOf(Date);
+
     expect(qb.orderBy).toHaveBeenCalledWith('event.startDate', 'ASC');
+
     expect(qb.take).toHaveBeenCalledWith(5);
     expect(result).toEqual(events);
   });
 
   it('prevents registration for non-approved events', async () => {
     const event = { id: 'event-1', status: 'pending_approval' } as Event;
-    eventRepository.findOne.mockResolvedValue(event);
+    eventRepoMock.findOne.mockResolvedValue(event);
 
     await expect(
       service.registerForEvent('event-1', 'player-1'),
@@ -113,24 +125,24 @@ describe('EventsService', () => {
       registrationDeadline: null,
     } as Event;
 
-    eventRepository.findOne.mockResolvedValue(event);
+    eventRepoMock.findOne.mockResolvedValue(event);
 
     // Mock the query builder for duplicate check
-    const qb = {
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      getOne: jest.fn().mockResolvedValue(null), // No existing registration
-    };
-    registrationRepository.createQueryBuilder.mockReturnValue(qb);
+    const qb = createQueryBuilderMock();
+    qb.getOne.mockResolvedValue(null);
+    registrationRepoMock.createQueryBuilder.mockReturnValue(qb);
 
     const registration = { id: 'reg-1' } as EventRegistration;
-    registrationRepository.create.mockReturnValue(registration);
-    registrationRepository.save.mockResolvedValue(registration);
-    eventRepository.increment.mockResolvedValue({ affected: 1 });
+    registrationRepoMock.create.mockReturnValue(registration);
+    registrationRepoMock.save.mockResolvedValue(registration);
+    eventRepoMock.increment.mockResolvedValue({ affected: 1 });
 
     const result = await service.registerForEvent('event-1', 'player-1');
 
-    expect(registrationRepository.create).toHaveBeenCalledWith(
+    expect(registrationRepoMock.create).toHaveBeenCalled();
+    const registrationCreateArgs = (registrationRepoMock.create.mock.calls[0] ??
+      []) as unknown as [unknown];
+    expect(registrationCreateArgs[0]).toEqual(
       expect.objectContaining({
         event: { id: 'event-1' },
         player: { userId: 'player-1' } as PlayerProfile,
@@ -138,7 +150,7 @@ describe('EventsService', () => {
       }),
     );
     expect(result).toBe(registration);
-    expect(eventRepository.increment).toHaveBeenCalledWith(
+    expect(eventRepoMock.increment).toHaveBeenCalledWith(
       { id: 'event-1' },
       'participantCount',
       1,
@@ -146,7 +158,7 @@ describe('EventsService', () => {
   });
 
   it('throws when registration not found on update', async () => {
-    registrationRepository.findOne.mockResolvedValue(null);
+    registrationRepoMock.findOne.mockResolvedValue(null);
 
     await expect(
       service.updateRegistration('reg-1', { status: 'approved' }),
