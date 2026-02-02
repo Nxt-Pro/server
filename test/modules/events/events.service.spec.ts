@@ -1,8 +1,8 @@
 import { Repository } from 'typeorm';
-import { EventsService } from '@/modules/events/events.service';
-import { Event, User, Venue } from '@/database/entities';
 import { HttpError } from '@/common/utils';
+import { Event, User, Venue } from '@/database/entities';
 import { EventQueryDto } from '@/modules/events/dtos';
+import { EventsService } from '@/modules/events/events.service';
 
 type EventQueryBuilderMock = {
   leftJoinAndSelect: jest.MockedFunction<

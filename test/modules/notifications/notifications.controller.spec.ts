@@ -1,7 +1,7 @@
-import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { NotificationsController } from '@/modules/notifications/notifications.controller';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import 'reflect-metadata';
 
 describe('NotificationsController', () => {
   let controller: NotificationsController;

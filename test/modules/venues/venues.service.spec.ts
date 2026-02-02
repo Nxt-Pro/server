@@ -1,8 +1,8 @@
 import { Repository } from 'typeorm';
-import { VenuesService } from '@/modules/venues/venues.service';
-import { Venue, User } from '@/database/entities';
 import { HttpError } from '@/common/utils';
+import { User, Venue } from '@/database/entities';
 import { CreateVenueDto, VenueQueryDto } from '@/modules/venues/dtos';
+import { VenuesService } from '@/modules/venues/venues.service';
 
 type VenueQueryBuilderMock = {
   andWhere: jest.MockedFunction<(...args: unknown[]) => VenueQueryBuilderMock>;

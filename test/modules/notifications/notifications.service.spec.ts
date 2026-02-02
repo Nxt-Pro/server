@@ -1,14 +1,14 @@
-import 'reflect-metadata';
-import { Logger } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { FindOperator } from 'typeorm';
+import { Notification, User } from '@/database/entities';
+import { FirebaseService } from '@/integrations/firebase/firebase.service';
 import {
   CreateNotificationEvent,
   NotificationsService,
 } from '@/modules/notifications/notifications.service';
-import { FirebaseService } from '@/integrations/firebase/firebase.service';
-import { Notification, User } from '@/database/entities';
+import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import 'reflect-metadata';
+import { FindOperator } from 'typeorm';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;

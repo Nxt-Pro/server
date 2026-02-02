@@ -130,3 +130,343 @@ Extra Notes
 ### 3. Git & Workflow
 
 - **Commit Messages:** Use Conventional Commits (e.g., `feat(scout): add bulk message endpoint`, `fix(auth): resolve jwt guard`).
+
+
+`src/
+├── main.ts                           # Application entry point
+├── app.module.ts                     # Root module orchestrating all features
+│
+├── config/                           # Configuration management
+│   ├── configuration.ts              # Environment variables loader
+│   ├── database.config.ts            # TypeORM configuration
+│   ├── redis.config.ts               # Redis/BullMQ configuration
+│   ├── firebase.config.ts            # FCM configuration
+│   ├── cloudflare.config.ts          # CDN configuration
+│   └── ai-services.config.ts         # AI microservices endpoints
+│
+├── common/                           # Shared utilities across the app
+│   ├── decorators/                   # Custom decorators
+│   │   ├── roles.decorator.ts        # @Roles('player', 'scout', 'admin')
+│   │   ├── current-user.decorator.ts # @CurrentUser() for getting user from request
+│   │   └── public.decorator.ts       # @Public() to skip auth
+│   │
+│   ├── guards/                       # Authorization & access control
+│   │   ├── jwt-auth.guard.ts         # JWT authentication guard
+│   │   ├── roles.guard.ts            # Role-based access control
+│   │   └── ownership.guard.ts        # Resource ownership verification
+│   │
+│   ├── interceptors/                 # Request/response transformation
+│   │   ├── transform.interceptor.ts  # Standardize API responses
+│   │   ├── logging.interceptor.ts    # Request/response logging
+│   │   └── cache.interceptor.ts      # Redis caching layer
+│   │
+│   ├── filters/                      # Exception handling
+│   │   ├── http-exception.filter.ts  # Global error formatting
+│   │   └── typeorm-exception.filter.ts # Database error handling
+│   │
+│   ├── pipes/                        # Data validation & transformation
+│   │   ├── validation.pipe.ts        # Global DTO validation
+│   │   └── parse-int.pipe.ts         # Custom parsing pipes
+│   │
+│   ├── middlewares/                  # Request processing
+│   │   ├── logger.middleware.ts      # HTTP request logging
+│   │   └── rate-limit.middleware.ts  # Rate limiting logic
+│   │
+│   ├── interfaces/                   # Shared TypeScript interfaces
+│   │   ├── paginated-result.interface.ts
+│   │   ├── api-response.interface.ts
+│   │   └── jwt-payload.interface.ts
+│   │
+│   ├── constants/                    # Application constants
+│   │   ├── roles.constant.ts         # USER_ROLES enum
+│   │   ├── status.constant.ts        # Various status enums
+│   │   └── queue-names.constant.ts   # BullMQ queue names
+│   │
+│   └── utils/                        # Helper functions
+│       ├── password.util.ts          # Bcrypt hashing
+│       ├── date.util.ts              # Date manipulation
+│       └── slug.util.ts              # String utilities
+│
+├── database/                         # Database layer
+│   ├── entities/                     # TypeORM entities (your schema)
+│   │   ├── base.entity.ts            # Abstract base with id, created_at, updated_at
+│   │   ├── user.entity.ts
+│   │   ├── player-profile.entity.ts
+│   │   ├── player-stats.entity.ts
+│   │   ├── career-timeline.entity.ts
+│   │   ├── achievement.entity.ts
+│   │   ├── scout-profile.entity.ts
+│   │   ├── scout-note.entity.ts
+│   │   ├── favorite.entity.ts
+│   │   ├── venue.entity.ts
+│   │   ├── event.entity.ts
+│   │   ├── event-registration.entity.ts
+│   │   ├── post.entity.ts
+│   │   ├── attachment.entity.ts
+│   │   ├── video.entity.ts
+│   │   ├── media-moderation.entity.ts
+│   │   ├── video-skill-analysis.entity.ts
+│   │   ├── like.entity.ts
+│   │   ├── comment.entity.ts
+│   │   ├── bookmark.entity.ts
+│   │   ├── connection.entity.ts
+│   │   ├── chat.entity.ts
+│   │   ├── message.entity.ts
+│   │   ├── report.entity.ts
+│   │   ├── block.entity.ts
+│   │   ├── mute.entity.ts
+│   │   ├── notification.entity.ts
+│   │   └── audit-log.entity.ts
+│   │
+│   ├── migrations/                   # Database migrations
+│   │   └── 1234567890-InitialSchema.ts
+│   │
+│   ├── seeds/                        # Database seeding
+│   │   ├── user.seed.ts
+│   │   └── venue.seed.ts
+│   │
+│   └── repositories/                 # Custom repositories (if needed)
+│       └── player.repository.ts      # Complex queries beyond TypeORM defaults
+│
+├── modules/                          # Feature modules (business logic)
+│   │
+│   ├── auth/                         # Authentication & authorization
+│   │   ├── auth.module.ts
+│   │   ├── auth.controller.ts        # POST /auth/register, /auth/login, /auth/refresh
+│   │   ├── auth.service.ts           # JWT generation, password validation
+│   │   ├── strategies/
+│   │   │   ├── jwt.strategy.ts       # JWT validation strategy
+│   │   │   └── local.strategy.ts     # Email/password strategy
+│   │   └── dto/
+│   │       ├── register.dto.ts
+│   │       ├── login.dto.ts
+│   │       └── token-response.dto.ts
+│   │
+│   ├── users/                        # User management
+│   │   ├── users.module.ts
+│   │   ├── users.controller.ts       # GET/PATCH /users/me, /users/:id
+│   │   ├── users.service.ts          # CRUD operations on User entity
+│   │   └── dto/
+│   │       ├── update-user.dto.ts
+│   │       └── user-response.dto.ts
+│   │
+│   ├── players/                      # Player-specific features
+│   │   ├── players.module.ts
+│   │   ├── players.controller.ts     # GET /players, /players/:id, /players/featured
+│   │   ├── players.service.ts        # Player profile logic, AI scoring coordination
+│   │   ├── submodules/
+│   │   │   ├── stats/                # Player statistics
+│   │   │   │   ├── stats.service.ts
+│   │   │   │   └── dto/
+│   │   │   ├── timeline/             # Career timeline
+│   │   │   │   ├── timeline.controller.ts  # POST /timeline/edit, GET /timeline
+│   │   │   │   ├── timeline.service.ts
+│   │   │   │   └── dto/
+│   │   │   └── achievements/         # Achievements showcase
+│   │   │       ├── achievements.controller.ts
+│   │   │       ├── achievements.service.ts
+│   │   │       └── dto/
+│   │   └── dto/
+│   │       ├── create-player.dto.ts
+│   │       ├── update-player.dto.ts
+│   │       ├── player-response.dto.ts
+│   │       └── player-filter.dto.ts  # Advanced filtering
+│   │
+│   ├── scouts/                       # Scout-specific features
+│   │   ├── scouts.module.ts
+│   │   ├── scouts.controller.ts      # GET /scouts, /scouts/:id
+│   │   ├── scouts.service.ts         # Scout profile, verification logic
+│   │   ├── submodules/
+│   │   │   ├── notes/                # Private scouting notes
+│   │   │   │   ├── notes.controller.ts  # POST /scout/note/:player_id
+│   │   │   │   ├── notes.service.ts
+│   │   │   │   └── dto/
+│   │   │   ├── comparison/           # Player comparison tool
+│   │   │   │   ├── comparison.controller.ts  # GET /players/compare
+│   │   │   │   ├── comparison.service.ts
+│   │   │   │   └── dto/
+│   │   │   └── bulk-messaging/       # Batch actions
+│   │   │       ├── bulk-messaging.controller.ts
+│   │   │       ├── bulk-messaging.service.ts
+│   │   │       └── dto/
+│   │   └── dto/
+│   │       ├── create-scout.dto.ts
+│   │       └── scout-response.dto.ts
+│   │
+│   ├── posts/                        # Social feed & content
+│   │   ├── posts.module.ts
+│   │   ├── posts.controller.ts       # POST /posts, GET /posts/fyp, /posts/highlights
+│   │   ├── posts.service.ts          # Post creation, engagement scoring
+│   │   ├── submodules/
+│   │   │   ├── likes/
+│   │   │   │   ├── likes.controller.ts    # POST /posts/:id/like
+│   │   │   │   ├── likes.service.ts
+│   │   │   │   └── dto/
+│   │   │   ├── comments/
+│   │   │   │   ├── comments.controller.ts # POST /posts/:id/comment
+│   │   │   │   ├── comments.service.ts
+│   │   │   │   └── dto/
+│   │   │   └── bookmarks/
+│   │   │       ├── bookmarks.controller.ts
+│   │   │       ├── bookmarks.service.ts
+│   │   │       └── dto/
+│   │   └── dto/
+│   │       ├── create-post.dto.ts
+│   │       └── post-response.dto.ts
+│   │
+│   ├── attachments/                  # Media attachments
+│   │   ├── attachments.module.ts
+│   │   ├── attachments.service.ts    # Upload to CDN, create attachment records
+│   │   └── dto/
+│   │       └── upload-response.dto.ts
+│   │
+│   ├── videos/                       # Video processing & analysis
+│   │   ├── videos.module.ts
+│   │   ├── videos.service.ts         # Trigger AI video analysis jobs
+│   │   └── dto/
+│   │       └── video-analysis.dto.ts
+│   │
+│   ├── connections/                  # Player-Scout connections
+│   │   ├── connections.module.ts
+│   │   ├── connections.controller.ts # POST /players/:scout_id/connect
+│   │   ├── connections.service.ts    # Connection request logic
+│   │   └── dto/
+│   │       └── connection-response.dto.ts
+│   │
+│   ├── chats/                        # Direct messaging
+│   │   ├── chats.module.ts
+│   │   ├── chats.controller.ts       # POST /chat/start, POST /chat/:id/message
+│   │   ├── chats.service.ts          # Scout-initiated DMs only
+│   │   ├── chats.gateway.ts          # WebSocket for real-time messaging
+│   │   └── dto/
+│   │       ├── start-chat.dto.ts
+│   │       └── send-message.dto.ts
+│   │
+│   ├── events/                       # Tournaments & trials
+│   │   ├── events.module.ts
+│   │   ├── events.controller.ts      # GET /events, POST /events
+│   │   ├── events.service.ts         # Event creation, registration
+│   │   ├── submodules/
+│   │   │   └── registrations/
+│   │   │       ├── registrations.controller.ts
+│   │   │       ├── registrations.service.ts
+│   │   │       └── dto/
+│   │   └── dto/
+│   │       ├── create-event.dto.ts
+│   │       └── register-event.dto.ts
+│   │
+│   ├── venues/                       # Event venues
+│   │   ├── venues.module.ts
+│   │   ├── venues.controller.ts
+│   │   ├── venues.service.ts
+│   │   └── dto/
+│   │
+│   ├── favorites/                    # Save/favorite functionality
+│   │   ├── favorites.module.ts
+│   │   ├── favorites.controller.ts
+│   │   ├── favorites.service.ts      # Polymorphic favorites (players/scouts)
+│   │   └── dto/
+│   │
+│   ├── notifications/                # Notification system
+│   │   ├── notifications.module.ts
+│   │   ├── notifications.controller.ts # GET /notifications
+│   │   ├── notifications.service.ts  # Create & mark as read
+│   │   └── dto/
+│   │       └── notification-response.dto.ts
+│   │
+│   ├── reports/                      # Reporting system
+│   │   ├── reports.module.ts
+│   │   ├── reports.controller.ts     # POST /reports
+│   │   ├── reports.service.ts        # Report inappropriate content
+│   │   └── dto/
+│   │       └── create-report.dto.ts
+│   │
+│   ├── moderation/                   # Block/Mute functionality
+│   │   ├── moderation.module.ts
+│   │   ├── moderation.controller.ts  # POST /block, POST /mute
+│   │   ├── moderation.service.ts
+│   │   └── dto/
+│   │
+│   ├── search/                       # Advanced search & filtering
+│   │   ├── search.module.ts
+│   │   ├── search.controller.ts      # GET /search/players, /search/scouts
+│   │   ├── search.service.ts         # ElasticSearch integration or DB filters
+│   │   └── dto/
+│   │       ├── search-players.dto.ts # Position, age, location, etc.
+│   │       └── search-results.dto.ts
+│   │
+│   ├── discovery/                    # FYP & recommendation engine
+│   │   ├── discovery.module.ts
+│   │   ├── discovery.controller.ts   # GET /discovery/fyp
+│   │   ├── discovery.service.ts      # Recommendation algorithm
+│   │   └── dto/
+│   │
+│   └── admin/                        # Admin dashboard & moderation
+│       ├── admin.module.ts
+│       ├── admin.controller.ts       # GET /admin/reports, POST /admin/ban/:id
+│       ├── admin.service.ts          # User management, analytics
+│       ├── submodules/
+│       │   ├── analytics/
+│       │   │   ├── analytics.service.ts
+│       │   │   └── dto/
+│       │   └── audit/                # Audit logging
+│       │       ├── audit.service.ts
+│       │       └── dto/
+│       └── dto/
+│
+├── queues/                           # BullMQ job processors
+│   ├── queues.module.ts              # Registers all queues & processors
+│   │
+│   ├── producers/                    # Job publishers (from monolith)
+│   │   ├── ai-scoring.producer.ts    # Publish player scoring jobs
+│   │   ├── video-analysis.producer.ts # Publish video analysis jobs
+│   │   ├── media-moderation.producer.ts # Publish content moderation jobs
+│   │   └── notification.producer.ts  # Publish FCM notification jobs
+│   │
+│   ├── consumers/                    # Job processors
+│   │   ├── ai-scoring.processor.ts   # Process AI scoring (calls Python service)
+│   │   ├── video-analysis.processor.ts
+│   │   ├── media-moderation.processor.ts
+│   │   └── notification.processor.ts # Send FCM notifications
+│   │
+│   └── dto/                          # Job payloads
+│       ├── ai-scoring-job.dto.ts
+│       └── video-analysis-job.dto.ts
+│
+├── integrations/                     # External service integrations
+│   ├── ai/                           # AI microservices clients
+│   │   ├── ai.module.ts
+│   │   ├── player-scoring/           # Player AI scoring service
+│   │   │   ├── player-scoring.client.ts # HTTP client to Python service
+│   │   │   └── dto/
+│   │   ├── video-analysis/           # Video skill analysis service
+│   │   │   ├── video-analysis.client.ts
+│   │   │   └── dto/
+│   │   └── content-moderation/       # Media moderation service
+│   │       ├── content-moderation.client.ts
+│   │       └── dto/
+│   │
+│   ├── firebase/                     # FCM integration
+│   │   ├── firebase.module.ts
+│   │   ├── firebase.service.ts       # Send push notifications
+│   │   └── dto/
+│   │
+│   ├── cloudflare/                   # CDN integration
+│   │   ├── cloudflare.module.ts
+│   │   ├── cloudflare.service.ts     # Upload videos/images
+│   │   └── dto/
+│   │
+│   └── redis/                        # Redis cache service
+│       ├── redis.module.ts
+│       ├── redis.service.ts          # Caching layer
+│       └── dto/
+│
+├── health/                           # Health checks & monitoring
+│   ├── health.module.ts
+│   └── health.controller.ts          # GET /health (DB, Redis, queues)
+│
+└── test/                             # E2E & integration tests
+    ├── app.e2e-spec.ts
+    └── fixtures/`
+
+desired folder structure
