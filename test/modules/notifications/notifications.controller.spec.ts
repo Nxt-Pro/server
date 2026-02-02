@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { NotificationsController } from '@/modules/notifications/notifications.controller';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
@@ -30,13 +31,14 @@ describe('NotificationsController', () => {
     controller = moduleRef.get(NotificationsController);
   });
 
-  it('getNotifications returns [] if user missing', async () => {
-    const res = await controller.getNotifications(
-      undefined as unknown as { id: string },
-      20,
-      0,
-    );
-    expect(res).toEqual([]);
+  it('getNotifications throws if user missing', async () => {
+    await expect(
+      controller.getNotifications(
+        undefined as unknown as { id: string },
+        20,
+        0,
+      ),
+    ).rejects.toBeDefined();
     expect(service.getUserNotifications).not.toHaveBeenCalled();
   });
 

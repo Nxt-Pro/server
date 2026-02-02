@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -6,7 +7,7 @@ import {
   CreateNotificationEvent,
   NotificationsService,
 } from '@/modules/notifications/notifications.service';
-import { FirebaseService } from '@/modules/firebase/firebase.service';
+import { FirebaseService } from '@/integrations/firebase/firebase.service';
 import { Notification, User } from '@/database/entities';
 
 describe('NotificationsService', () => {

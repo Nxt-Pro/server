@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import { FirebaseService } from '@/modules/firebase/firebase.service';
+import { FirebaseService } from '@/integrations/firebase/firebase.service';
 import { Notification, User } from '@/database/entities';
 
 export interface CreateNotificationEvent {
@@ -36,8 +36,9 @@ export class NotificationsService {
    * Listens to internal events and creates a notification.
    * Usage: this.eventEmitter.emit('notification.create', { ... })
    */
-  @OnEvent('notification.create')
-  async handleNotificationCreate(payload: CreateNotificationEvent) {
+  private processNotificationCreate = async (
+    payload: CreateNotificationEvent,
+  ) => {
     try {
       this.logger.log(
         `Creating notification for user ${payload.userId}: ${payload.type}`,
@@ -75,36 +76,45 @@ export class NotificationsService {
     } catch (error) {
       this.logger.error('Failed to create notification', error);
     }
+  };
+
+  @OnEvent('notification.create')
+  onNotificationCreate(payload: CreateNotificationEvent) {
+    return this.processNotificationCreate(payload);
   }
 
-  async getUserNotifications(
+  handleNotificationCreate = async (payload: CreateNotificationEvent) => {
+    return this.processNotificationCreate(payload);
+  };
+
+  getUserNotifications = async (
     userId: string,
     limit: number = 20,
     offset: number = 0,
-  ) {
+  ) => {
     return this.notificationRepo.find({
       where: { user: { id: userId } },
       order: { createdAt: 'DESC' },
       take: limit,
       skip: offset,
     });
-  }
+  };
 
-  async markAsRead(notificationId: string, userId: string) {
+  markAsRead = async (notificationId: string, userId: string) => {
     return this.notificationRepo.update(
       { id: notificationId, user: { id: userId } },
       { read_at: new Date() },
     );
-  }
+  };
 
-  async markAllAsRead(userId: string) {
+  markAllAsRead = async (userId: string) => {
     return this.notificationRepo.update(
       { user: { id: userId }, read_at: IsNull() },
       { read_at: new Date() },
     );
-  }
+  };
 
-  async registerDeviceToken(userId: string, token: string) {
+  registerDeviceToken = async (userId: string, token: string) => {
     const user = await this.userRepo.findOne({
       where: { id: userId },
       select: ['id', 'fcmTokens'],
@@ -118,9 +128,9 @@ export class NotificationsService {
 
     user.fcmTokens = Array.from(tokens);
     await this.userRepo.save(user);
-  }
+  };
 
-  async removeDeviceToken(userId: string, token: string) {
+  removeDeviceToken = async (userId: string, token: string) => {
     const user = await this.userRepo.findOne({
       where: { id: userId },
       select: ['id', 'fcmTokens'],
@@ -130,5 +140,5 @@ export class NotificationsService {
 
     user.fcmTokens = user.fcmTokens.filter(t => t !== token);
     await this.userRepo.save(user);
-  }
+  };
 }

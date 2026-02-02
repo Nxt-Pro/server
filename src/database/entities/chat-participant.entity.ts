@@ -18,8 +18,8 @@ export class ChatParticipant extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: ['active', 'archived', 'blocked'],
-    default: 'active',
+    enum: ['pending', 'active', 'archived', 'blocked'],
+    default: 'pending',
   })
-  status: 'active' | 'archived' | 'blocked';
+  status: 'pending' | 'active' | 'archived' | 'blocked';
 }

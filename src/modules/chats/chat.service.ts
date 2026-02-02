@@ -1,12 +1,10 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SendMessageDto, StartChatDto } from './dtos';
 import { Chat, ChatParticipant, Message, User } from '@/database/entities';
+import { HttpError } from '@/common/utils';
 
 @Injectable()
 export class ChatService {
@@ -17,17 +15,64 @@ export class ChatService {
     private readonly participantRepository: Repository<ChatParticipant>,
     @InjectRepository(Message)
     private readonly messageRepository: Repository<Message>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
-
-  async startChat(scoutId: string, dto: StartChatDto): Promise<Chat> {
-    if (!scoutId) {
-      throw new BadRequestException('Invalid user');
+  private getUserOrThrow = async (userId?: string) => {
+    if (!userId) {
+      throw HttpError.badRequest('Invalid user');
     }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw HttpError.unauthorized('User not found');
+    }
+
+    return user;
+  };
+
+  startChat = async (initiatorId: string, dto: StartChatDto): Promise<Chat> => {
+    const initiator = await this.getUserOrThrow(initiatorId);
+    const isScoutInitiator = initiator.role === 'scout';
+    const targetPlayerId = isScoutInitiator ? dto.playerId : undefined;
+    const targetScoutId = !isScoutInitiator ? dto.scoutId : undefined;
+
+    if (isScoutInitiator && !targetPlayerId) {
+      throw HttpError.badRequest('playerId is required for scouts');
+    }
+
+    if (!isScoutInitiator && !targetScoutId) {
+      throw HttpError.badRequest('scoutId is required for players');
+    }
+
+    const targetId = targetPlayerId || targetScoutId;
+    const targetUser = await this.userRepository.findOne({
+      where: { id: targetId },
+    });
+
+    if (!targetUser) {
+      throw HttpError.notFound('Target user not found');
+    }
+
+    if (isScoutInitiator && targetUser.role !== 'player') {
+      throw HttpError.badRequest('Scouts can only start chats with players');
+    }
+
+    if (!isScoutInitiator && targetUser.role !== 'scout') {
+      throw HttpError.badRequest('Players can only request chats with scouts');
+    }
+
+    const scoutId = isScoutInitiator ? initiatorId : (targetScoutId as string);
+    const playerId = isScoutInitiator
+      ? (targetPlayerId as string)
+      : initiatorId;
 
     const existing = await this.chatRepository.findOne({
       where: {
         scout: { id: scoutId },
-        player: { id: dto.playerId },
+        player: { id: playerId },
       },
       relations: ['participants', 'scout', 'player'],
     });
@@ -36,11 +81,13 @@ export class ChatService {
       return existing;
     }
 
+    const status = isScoutInitiator ? 'active' : 'pending';
+
     const chat = this.chatRepository.create({
       type: 'direct',
-      status: 'active',
+      status,
       scout: { id: scoutId } as User,
-      player: { id: dto.playerId } as User,
+      player: { id: playerId } as User,
       unread_count: 0,
       last_message_at: null,
       last_message_preview: null,
@@ -53,28 +100,74 @@ export class ChatService {
         chat: savedChat,
         user: { id: scoutId } as User,
         unread_count: 0,
-        status: 'active',
+        status: status === 'active' ? 'active' : 'pending',
       }),
       this.participantRepository.create({
         chat: savedChat,
-        user: { id: dto.playerId } as User,
+        user: { id: playerId } as User,
         unread_count: 0,
-        status: 'active',
+        status: status === 'active' ? 'active' : 'pending',
       }),
     ];
 
     await this.participantRepository.save(participants);
 
+    if (!isScoutInitiator) {
+      this.eventEmitter.emit('chat.requested', {
+        scoutId,
+        playerId,
+        chatId: savedChat.id,
+      });
+    }
+
     return this.chatRepository.findOneOrFail({
       where: { id: savedChat.id },
       relations: ['participants', 'scout', 'player'],
     });
-  }
+  };
 
-  async getChats(userId: string): Promise<Chat[]> {
-    if (!userId) {
-      throw new BadRequestException('Invalid user');
+  acceptChat = async (chatId: string, scoutId: string): Promise<Chat> => {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId },
+      relations: ['participants', 'scout', 'player'],
+    });
+
+    if (!chat) {
+      throw HttpError.notFound('Chat not found');
     }
+
+    if (chat.scout?.id !== scoutId) {
+      throw HttpError.forbidden('Only the scout can accept this chat');
+    }
+
+    if (chat.status !== 'pending') {
+      return chat;
+    }
+
+    chat.status = 'active';
+    await this.chatRepository.save(chat);
+
+    await this.participantRepository
+      .createQueryBuilder()
+      .update(ChatParticipant)
+      .set({ status: 'active' })
+      .where('chat_id = :chatId', { chatId })
+      .execute();
+
+    this.eventEmitter.emit('chat.accepted', {
+      chatId: chat.id,
+      scoutId,
+      playerId: chat.player?.id,
+    });
+
+    return this.chatRepository.findOneOrFail({
+      where: { id: chatId },
+      relations: ['participants', 'scout', 'player'],
+    });
+  };
+
+  getChats = async (userId: string): Promise<Chat[]> => {
+    await this.getUserOrThrow(userId);
 
     return this.chatRepository
       .createQueryBuilder('chat')
@@ -85,34 +178,34 @@ export class ChatService {
       .where('scout.id = :userId OR player.id = :userId', { userId })
       .orderBy('chat.last_message_at', 'DESC')
       .getMany();
-  }
+  };
 
-  async getChatById(chatId: string, userId: string): Promise<Chat> {
+  getChatById = async (chatId: string, userId: string): Promise<Chat> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
       relations: ['participants', 'scout', 'player'],
     });
 
     if (!chat) {
-      throw new NotFoundException('Chat not found');
+      throw HttpError.notFound('Chat not found');
     }
 
     const isParticipant =
       chat.scout?.id === userId || chat.player?.id === userId;
 
     if (!isParticipant) {
-      throw new BadRequestException('Not authorized to access this chat');
+      throw HttpError.forbidden('Not authorized to access this chat');
     }
 
     return chat;
-  }
+  };
 
-  async getMessages(
+  getMessages = async (
     chatId: string,
     userId: string,
     limit = 50,
     offset = 0,
-  ): Promise<{ data: Message[]; total: number }> {
+  ): Promise<{ data: Message[]; total: number }> => {
     await this.getChatById(chatId, userId);
 
     const [data, total] = await this.messageRepository.findAndCount({
@@ -124,27 +217,31 @@ export class ChatService {
     });
 
     return { data: data.reverse(), total };
-  }
+  };
 
-  async sendMessage(
+  sendMessage = async (
     chatId: string,
     senderId: string,
     dto: SendMessageDto,
-  ): Promise<Message> {
+  ): Promise<Message> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
       relations: ['scout', 'player'],
     });
 
     if (!chat) {
-      throw new NotFoundException('Chat not found');
+      throw HttpError.notFound('Chat not found');
     }
 
     const isParticipant =
       chat.scout?.id === senderId || chat.player?.id === senderId;
 
     if (!isParticipant) {
-      throw new BadRequestException('Not authorized to send messages');
+      throw HttpError.forbidden('Not authorized to send messages');
+    }
+
+    if (chat.status !== 'active') {
+      throw HttpError.badRequest('Chat is pending approval');
     }
 
     const message = this.messageRepository.create({
@@ -176,10 +273,17 @@ export class ChatService {
         .execute();
     }
 
-    return savedMessage;
-  }
+    this.eventEmitter.emit('chat.message', {
+      chatId,
+      message: savedMessage,
+      senderId,
+      recipientId,
+    });
 
-  async markChatRead(chatId: string, userId: string): Promise<void> {
+    return savedMessage;
+  };
+
+  markChatRead = async (chatId: string, userId: string): Promise<void> => {
     await this.getChatById(chatId, userId);
 
     await this.participantRepository
@@ -198,9 +302,12 @@ export class ChatService {
       .andWhere('sender_id != :userId', { userId })
       .andWhere('read_at IS NULL')
       .execute();
-  }
+  };
 
-  async archiveChat(chatId: string, userId: string): Promise<ChatParticipant> {
+  archiveChat = async (
+    chatId: string,
+    userId: string,
+  ): Promise<ChatParticipant> => {
     await this.getChatById(chatId, userId);
 
     const participant = await this.participantRepository.findOne({
@@ -209,14 +316,17 @@ export class ChatService {
     });
 
     if (!participant) {
-      throw new NotFoundException('Participant not found');
+      throw HttpError.notFound('Participant not found');
     }
 
     participant.status = 'archived';
     return this.participantRepository.save(participant);
-  }
+  };
 
-  async blockChat(chatId: string, userId: string): Promise<ChatParticipant> {
+  blockChat = async (
+    chatId: string,
+    userId: string,
+  ): Promise<ChatParticipant> => {
     await this.getChatById(chatId, userId);
 
     const participant = await this.participantRepository.findOne({
@@ -225,10 +335,10 @@ export class ChatService {
     });
 
     if (!participant) {
-      throw new NotFoundException('Participant not found');
+      throw HttpError.notFound('Participant not found');
     }
 
     participant.status = 'blocked';
     return this.participantRepository.save(participant);
-  }
+  };
 }

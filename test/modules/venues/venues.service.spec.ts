@@ -1,12 +1,29 @@
-import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { VenuesService } from '../../../src/modules/venues/venues.service';
-import { createQueryBuilderMock } from '../../helpers/mock.helpers';
-import { Venue } from '@/database/entities';
+import { VenuesService } from '@/modules/venues/venues.service';
+import { Venue, User } from '@/database/entities';
+import { HttpError } from '@/common/utils';
+import { CreateVenueDto, VenueQueryDto } from '@/modules/venues/dtos';
+
+type VenueQueryBuilderMock = {
+  andWhere: jest.MockedFunction<(...args: unknown[]) => VenueQueryBuilderMock>;
+  orderBy: jest.MockedFunction<(...args: unknown[]) => VenueQueryBuilderMock>;
+  skip: jest.MockedFunction<(skip: number) => VenueQueryBuilderMock>;
+  take: jest.MockedFunction<(take: number) => VenueQueryBuilderMock>;
+  getManyAndCount: jest.MockedFunction<() => Promise<[Venue[], number]>>;
+};
+
+const createVenueQueryBuilderMock = (): VenueQueryBuilderMock => {
+  const qb: Partial<VenueQueryBuilderMock> = {};
+  qb.andWhere = jest.fn(() => qb as VenueQueryBuilderMock);
+  qb.orderBy = jest.fn(() => qb as VenueQueryBuilderMock);
+  qb.skip = jest.fn(() => qb as VenueQueryBuilderMock);
+  qb.take = jest.fn(() => qb as VenueQueryBuilderMock);
+  qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+  return qb as VenueQueryBuilderMock;
+};
 
 describe('VenuesService', () => {
   let service: VenuesService;
-  let venueRepository: Repository<Venue>;
   let venueRepoMock: {
     create: jest.Mock;
     save: jest.Mock;
@@ -14,6 +31,7 @@ describe('VenuesService', () => {
     createQueryBuilder: jest.Mock;
     remove: jest.Mock;
   };
+  let userRepoMock: { findOne: jest.Mock };
 
   beforeEach(() => {
     venueRepoMock = {
@@ -23,38 +41,61 @@ describe('VenuesService', () => {
       createQueryBuilder: jest.fn(),
       remove: jest.fn(),
     };
-    venueRepository = venueRepoMock as unknown as Repository<Venue>;
 
-    jest.clearAllMocks();
-    service = new VenuesService(venueRepository);
+    userRepoMock = {
+      findOne: jest.fn(),
+    };
+
+    service = new VenuesService(
+      venueRepoMock as unknown as Repository<Venue>,
+      userRepoMock as unknown as Repository<User>,
+    );
   });
 
-  it('creates a venue', async () => {
-    const dto = { name: 'Stadium', address: 'Address' };
+  it('creates a venue when requester is admin', async () => {
+    const dto: CreateVenueDto = { name: 'Stadium', address: 'Address' };
     const venue = { id: 'venue-1' } as Venue;
 
+    userRepoMock.findOne.mockResolvedValue({
+      id: 'admin-1',
+      role: 'admin',
+    } as User);
     venueRepoMock.create.mockReturnValue(venue);
     venueRepoMock.save.mockResolvedValue(venue);
 
-    const result = await service.createVenue(dto);
+    const result = await service.createVenue('admin-1', dto);
 
     expect(venueRepoMock.create).toHaveBeenCalledWith(dto);
     expect(result).toBe(venue);
   });
 
-  it('gets venues with filters', async () => {
-    const qb = createQueryBuilderMock();
-    const venues = [{ id: 'venue-1' } as Venue];
-    qb.getMany.mockResolvedValue(venues);
+  it('blocks non-admins from creating venues', async () => {
+    userRepoMock.findOne.mockResolvedValue({
+      id: 'user-1',
+      role: 'player',
+    } as User);
+
+    const badDto: CreateVenueDto = { name: 'n', address: 'a' };
+
+    await expect(service.createVenue('user-1', badDto)).rejects.toBeInstanceOf(
+      HttpError,
+    );
+  });
+
+  it('gets venues with filters and pagination', async () => {
+    const qb = createVenueQueryBuilderMock();
+    const venues: Venue[] = [{ id: 'venue-1' } as Venue];
+    qb.getManyAndCount.mockResolvedValue([venues, 1]);
     venueRepoMock.createQueryBuilder.mockReturnValue(qb);
 
-    const result = await service.getVenues({
-      search: 'stadium',
-      city: 'Cairo',
-      country: 'EG',
-      limit: 5,
-      offset: 10,
-    });
+    const query = new VenueQueryDto();
+    query.search = 'stadium';
+    query.city = 'Cairo';
+    query.country = 'EG';
+    query.limit = 5;
+    query.offset = 10;
+
+    const result = await service.getVenues(query);
 
     expect(qb.andWhere).toHaveBeenCalledWith(
       '(venue.name ILIKE :search OR venue.address ILIKE :search)',
@@ -70,18 +111,16 @@ describe('VenuesService', () => {
     });
 
     expect(qb.orderBy).toHaveBeenCalledWith('venue.name', 'ASC');
-
     expect(qb.skip).toHaveBeenCalledWith(10);
-
     expect(qb.take).toHaveBeenCalledWith(5);
-    expect(result).toEqual(venues);
+    expect(result).toEqual({ data: venues, total: 1 });
   });
 
-  it('throws when venue not found', async () => {
+  it('throws HttpError when venue not found', async () => {
     venueRepoMock.findOne.mockResolvedValue(null);
 
     await expect(service.getVenueById('venue-1')).rejects.toBeInstanceOf(
-      NotFoundException,
+      HttpError,
     );
   });
 });

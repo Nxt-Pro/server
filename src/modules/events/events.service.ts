@@ -1,71 +1,105 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CreateEventDto, UpdateEventDto, UpdateRegistrationDto } from './dtos';
-import {
-  Event,
-  EventRegistration,
-  PlayerProfile,
-  User,
-  Venue,
-} from '@/database/entities';
+import { CreateEventDto, EventQueryDto, UpdateEventDto } from './dtos';
+import { Event, User, Venue } from '@/database/entities';
+import { HttpError } from '@/common/utils';
 
 @Injectable()
 export class EventsService {
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
-    @InjectRepository(EventRegistration)
-    private readonly registrationRepository: Repository<EventRegistration>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
+  private getUserOrThrow = async (userId?: string) => {
+    if (!userId) {
+      throw HttpError.badRequest('Invalid user');
+    }
 
-  async createEvent(userId: string, dto: CreateEventDto): Promise<Event> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw HttpError.unauthorized('User not found');
+    }
+
+    return user;
+  };
+
+  private isAdmin = (user: User) => user.role === 'admin';
+
+  createEvent = async (userId: string, dto: CreateEventDto): Promise<Event> => {
+    const creator = await this.getUserOrThrow(userId);
+    const organizerType: 'scout' | 'admin' = this.isAdmin(creator)
+      ? 'admin'
+      : 'scout';
+
+    // TODO: once CurrentUser includes the role, drop this lookup and set organizer_type directly.
     const event = this.eventRepository.create({
       ...dto,
       organizer: { id: userId } as User,
       createdBy: { id: userId } as User,
-      organizer_type: 'scout', // Could be determined from user role
+      organizer_type: organizerType,
       status: 'pending_approval',
       participantCount: 0,
-      venue: dto.venueId ? { id: dto.venueId } : undefined,
+      venue: dto.venueId ? ({ id: dto.venueId } as Venue) : undefined,
     });
 
     return this.eventRepository.save(event);
-  }
+  };
 
-  async getOngoingEvents(limit = 10): Promise<Event[]> {
-    return this.eventRepository
+  getOngoingEvents = async (
+    query: EventQueryDto = new EventQueryDto(),
+  ): Promise<Event[]> => {
+    const now = new Date();
+
+    const qb = this.eventRepository
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.venue', 'venue')
       .leftJoinAndSelect('event.organizer', 'organizer')
       .where('event.status = :status', { status: 'approved' })
-      .andWhere('event.start_date >= :now', { now: new Date() })
-      .orderBy('event.startDate', 'ASC')
-      .take(limit)
-      .getMany();
-  }
+      .andWhere('event.startDate <= :now', { now })
+      .andWhere('event.endDate >= :now', { now });
 
-  async getEvents(query: {
-    eventType?: 'tournament' | 'trial' | 'workshop';
-    status?: 'pending_approval' | 'approved' | 'rejected';
-    search?: string;
-    city?: string;
-    country?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<Event[]> {
+    if (query.eventType) {
+      qb.andWhere('event.eventType = :eventType', {
+        eventType: query.eventType,
+      });
+    }
+
+    if (query.search) {
+      qb.andWhere(
+        '(event.title ILIKE :search OR event.description ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query.city) {
+      qb.andWhere('venue.city ILIKE :city', { city: `%${query.city}%` });
+    }
+
+    if (query.country) {
+      qb.andWhere('venue.country ILIKE :country', {
+        country: `%${query.country}%`,
+      });
+    }
+
+    qb.orderBy('event.startDate', 'ASC').take(query.limit ?? 10);
+
+    return qb.getMany();
+  };
+
+  getEvents = async (
+    query: EventQueryDto,
+  ): Promise<{ data: Event[]; total: number }> => {
     const qb = this.eventRepository
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.venue', 'venue')
       .leftJoinAndSelect('event.organizer', 'organizer');
 
     if (query.eventType) {
-      qb.andWhere('event.event_type = :eventType', {
+      qb.andWhere('event.eventType = :eventType', {
         eventType: query.eventType,
       });
     }
@@ -92,35 +126,36 @@ export class EventsService {
     }
 
     qb.orderBy('event.startDate', 'DESC')
-      .skip(query.offset || 0)
-      .take(query.limit || 20);
+      .skip(query.offset ?? 0)
+      .take(query.limit ?? 20);
 
-    return qb.getMany();
-  }
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total };
+  };
 
-  async getEventById(eventId: string): Promise<Event> {
+  getEventById = async (eventId: string): Promise<Event> => {
     const event = await this.eventRepository.findOne({
       where: { id: eventId },
       relations: ['venue', 'organizer', 'approvedBy', 'registrations'],
     });
 
     if (!event) {
-      throw new NotFoundException('Event not found');
+      throw HttpError.notFound('Event not found');
     }
 
     return event;
-  }
+  };
 
-  async updateEvent(
+  updateEvent = async (
     eventId: string,
     userId: string,
     dto: UpdateEventDto,
-  ): Promise<Event> {
+  ): Promise<Event> => {
     const event = await this.getEventById(eventId);
+    const requester = await this.getUserOrThrow(userId);
 
-    // Check if user is the organizer or admin
-    if (event.organizer.id !== userId) {
-      throw new ForbiddenException('Not authorized to update this event');
+    if (event.organizer.id !== userId && !this.isAdmin(requester)) {
+      throw HttpError.forbidden('Not authorized to update this event');
     }
 
     Object.assign(event, dto);
@@ -130,18 +165,24 @@ export class EventsService {
     }
 
     return this.eventRepository.save(event);
-  }
+  };
 
-  async approveEvent(
+  approveEvent = async (
     eventId: string,
     adminId: string,
     approve: boolean,
     rejectionReason?: string,
-  ): Promise<Event> {
+  ): Promise<Event> => {
+    const admin = await this.getUserOrThrow(adminId);
+
+    if (!this.isAdmin(admin)) {
+      throw HttpError.forbidden('Only admins can approve events');
+    }
+
     const event = await this.getEventById(eventId);
 
     if (event.status !== 'pending_approval') {
-      throw new BadRequestException('Event is not pending approval');
+      throw HttpError.badRequest('Event is not pending approval');
     }
 
     event.status = approve ? 'approved' : 'rejected';
@@ -153,134 +194,16 @@ export class EventsService {
     }
 
     return this.eventRepository.save(event);
-  }
+  };
 
-  async deleteEvent(eventId: string, userId: string): Promise<void> {
+  deleteEvent = async (eventId: string, userId: string): Promise<void> => {
     const event = await this.getEventById(eventId);
+    const requester = await this.getUserOrThrow(userId);
 
-    if (event.organizer.id !== userId) {
-      throw new ForbiddenException('Not authorized to delete this event');
+    if (event.organizer.id !== userId && !this.isAdmin(requester)) {
+      throw HttpError.forbidden('Not authorized to delete this event');
     }
 
     await this.eventRepository.remove(event);
-  }
-
-  // Event Registration Methods
-  async registerForEvent(
-    eventId: string,
-    playerId: string,
-  ): Promise<EventRegistration> {
-    const event = await this.eventRepository.findOne({
-      where: { id: eventId },
-    });
-
-    if (!event) {
-      throw new NotFoundException('Event not found');
-    }
-
-    if (event.status !== 'approved') {
-      throw new BadRequestException('Event is not approved');
-    }
-
-    if (
-      event.maxParticipants > 0 &&
-      event.participantCount >= event.maxParticipants
-    ) {
-      throw new BadRequestException('Event is full');
-    }
-
-    if (
-      event.registrationDeadline &&
-      new Date() > new Date(event.registrationDeadline)
-    ) {
-      throw new BadRequestException('Registration deadline has passed');
-    }
-
-    // Check if already registered
-    const existing = await this.registrationRepository
-      .createQueryBuilder('registration')
-      .where('registration.event_id = :eventId', { eventId })
-      .andWhere('registration.player_id = :playerId', { playerId })
-      .getOne();
-
-    if (existing) {
-      throw new BadRequestException('Already registered for this event');
-    }
-
-    const registration = this.registrationRepository.create({
-      event: { id: eventId } as Event,
-      player: { userId: playerId } as PlayerProfile,
-      status: 'pending',
-      registered_at: new Date(),
-    });
-
-    const saved = await this.registrationRepository.save(registration);
-
-    // Update participant count without touching relations
-    await this.eventRepository.increment(
-      { id: eventId },
-      'participantCount',
-      1,
-    );
-
-    return saved;
-  }
-
-  async getEventRegistrations(eventId: string): Promise<EventRegistration[]> {
-    return this.registrationRepository.find({
-      where: { event: { id: eventId } },
-      relations: ['player', 'player.user'],
-      order: { registered_at: 'DESC' },
-    });
-  }
-
-  async updateRegistration(
-    registrationId: string,
-    dto: UpdateRegistrationDto,
-  ): Promise<EventRegistration> {
-    const registration = await this.registrationRepository.findOne({
-      where: { id: registrationId },
-      relations: ['event', 'player'],
-    });
-
-    if (!registration) {
-      throw new NotFoundException('Registration not found');
-    }
-
-    Object.assign(registration, dto);
-    return this.registrationRepository.save(registration);
-  }
-
-  async cancelRegistration(
-    registrationId: string,
-    userId: string,
-  ): Promise<void> {
-    const registration = await this.registrationRepository.findOne({
-      where: { id: registrationId },
-      relations: ['event', 'player', 'player.user'],
-    });
-
-    if (!registration) {
-      throw new NotFoundException('Registration not found');
-    }
-
-    if (registration.player.user.id !== userId) {
-      throw new ForbiddenException(
-        'Not authorized to cancel this registration',
-      );
-    }
-
-    registration.cancelled = true;
-    await this.registrationRepository.save(registration);
-
-    // Update participant count without touching relations
-    await this.eventRepository
-      .createQueryBuilder()
-      .update(Event)
-      .set({
-        participantCount: () => 'GREATEST(participant_count - 1, 0)',
-      })
-      .where('id = :id', { id: registration.event.id })
-      .execute();
-  }
+  };
 }

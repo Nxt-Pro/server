@@ -7,10 +7,10 @@ import {
   Patch,
   Post,
   Query,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { IsNotEmpty, IsString } from 'class-validator';
 import { NotificationsService } from './notifications.service';
+import { HttpError } from '@/common/utils';
 import { CurrentUser } from '@/common/decorators';
 
 class RegisterDeviceDto {
@@ -30,7 +30,7 @@ export class NotificationsController {
     @CurrentUser() user: { id: string },
     @Body() dto: RegisterDeviceDto,
   ) {
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw HttpError.unauthorized();
     await this.notificationsService.registerDeviceToken(user.id, dto.token);
     return { message: 'Device registered successfully' };
   }
@@ -40,7 +40,7 @@ export class NotificationsController {
     @CurrentUser() user: { id: string },
     @Param('token') token: string,
   ) {
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw HttpError.unauthorized();
     await this.notificationsService.removeDeviceToken(user.id, token);
     return { message: 'Device removed successfully' };
   }
@@ -52,7 +52,7 @@ export class NotificationsController {
     @Query('offset') offset = 0,
   ) {
     // Check if user exists (handled by Guard usually)
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw HttpError.unauthorized();
     return this.notificationsService.getUserNotifications(
       user.id,
       Number(limit),
@@ -62,7 +62,7 @@ export class NotificationsController {
 
   @Patch('read-all')
   async markAllAsRead(@CurrentUser() user: { id: string }) {
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw HttpError.unauthorized();
     return this.notificationsService.markAllAsRead(user.id);
   }
 
@@ -71,7 +71,7 @@ export class NotificationsController {
     @CurrentUser() user: { id: string },
     @Param('id') id: string,
   ) {
-    if (!user) throw new UnauthorizedException();
+    if (!user) throw HttpError.unauthorized();
     return this.notificationsService.markAsRead(id, user.id);
   }
 }

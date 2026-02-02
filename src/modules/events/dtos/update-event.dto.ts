@@ -85,12 +85,4 @@ export class UpdateEventDto {
   @IsUrl()
   @IsOptional()
   coverImageUrl?: string;
-
-  @IsEnum(['pending_approval', 'approved', 'rejected'])
-  @IsOptional()
-  status?: 'pending_approval' | 'approved' | 'rejected';
-
-  @IsString()
-  @IsOptional()
-  rejectionReason?: string;
 }

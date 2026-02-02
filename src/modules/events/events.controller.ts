@@ -8,7 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { CreateEventDto, UpdateEventDto, UpdateRegistrationDto } from './dtos';
+import { CreateEventDto, EventQueryDto, UpdateEventDto } from './dtos';
 import { EventsService } from './events.service';
 import { CurrentUser } from '@/common/decorators';
 
@@ -25,29 +25,13 @@ export class EventsController {
   }
 
   @Get('ongoing')
-  async getOngoingEvents(@Query('limit') limit = 10) {
-    return this.eventsService.getOngoingEvents(Number(limit));
+  async getOngoingEvents(@Query() query: EventQueryDto) {
+    return this.eventsService.getOngoingEvents(query);
   }
 
   @Get()
-  async getEvents(
-    @Query('eventType') eventType?: 'tournament' | 'trial' | 'workshop',
-    @Query('status') status?: 'pending_approval' | 'approved' | 'rejected',
-    @Query('search') search?: string,
-    @Query('city') city?: string,
-    @Query('country') country?: string,
-    @Query('limit') limit = 20,
-    @Query('offset') offset = 0,
-  ) {
-    return this.eventsService.getEvents({
-      eventType,
-      status,
-      search,
-      city,
-      country,
-      limit: Number(limit),
-      offset: Number(offset),
-    });
+  async getEvents(@Query() query: EventQueryDto) {
+    return this.eventsService.getEvents(query);
   }
 
   @Get(':id')
@@ -85,36 +69,5 @@ export class EventsController {
       body.approve,
       body.rejectionReason,
     );
-  }
-
-  // Registration endpoints
-  @Post(':id/register')
-  async registerForEvent(
-    @CurrentUser() user: { id: string },
-    @Param('id') eventId: string,
-  ) {
-    return this.eventsService.registerForEvent(eventId, user?.id);
-  }
-
-  @Get(':id/registrations')
-  async getEventRegistrations(@Param('id') eventId: string) {
-    return this.eventsService.getEventRegistrations(eventId);
-  }
-
-  @Patch('registrations/:id')
-  async updateRegistration(
-    @Param('id') registrationId: string,
-    @Body() dto: UpdateRegistrationDto,
-  ) {
-    return this.eventsService.updateRegistration(registrationId, dto);
-  }
-
-  @Delete('registrations/:id')
-  async cancelRegistration(
-    @CurrentUser() user: { id: string },
-    @Param('id') registrationId: string,
-  ) {
-    await this.eventsService.cancelRegistration(registrationId, user?.id);
-    return { success: true };
   }
 }

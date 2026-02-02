@@ -15,12 +15,12 @@ import { DatabaseModule } from './database/database.module';
 import { ConfigValidatorService } from '@/common/validators';
 import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
+import { FirebaseModule } from '@/integrations/firebase/firebase.module';
 import { ChatModule } from '@/modules/chats';
 import { EventsModule } from '@/modules/events';
 import { HealthModule } from '@/modules/health';
 import { NotificationsModule } from '@/modules/notifications';
 import { VenuesModule } from '@/modules/venues';
-import { FirebaseModule } from '@/modules/firebase/firebase.module';
 
 @Module({
   imports: [

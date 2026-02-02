@@ -23,6 +23,14 @@ export class ChatController {
     return this.chatService.startChat(user?.id, dto);
   }
 
+  @Patch(':id/accept')
+  async acceptChat(
+    @CurrentUser() user: { id: string },
+    @Param('id') chatId: string,
+  ) {
+    return this.chatService.acceptChat(chatId, user?.id);
+  }
+
   @Get()
   async getChats(@CurrentUser() user: { id: string }) {
     return this.chatService.getChats(user?.id);

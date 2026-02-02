@@ -1,27 +1,47 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { EventsService } from '../../../src/modules/events/events.service';
-import { createQueryBuilderMock } from '../../helpers/mock.helpers';
-import { Event, EventRegistration, PlayerProfile } from '@/database/entities';
+import { EventsService } from '@/modules/events/events.service';
+import { Event, User, Venue } from '@/database/entities';
+import { HttpError } from '@/common/utils';
+import { EventQueryDto } from '@/modules/events/dtos';
+
+type EventQueryBuilderMock = {
+  leftJoinAndSelect: jest.MockedFunction<
+    (...args: unknown[]) => EventQueryBuilderMock
+  >;
+  where: jest.MockedFunction<(...args: unknown[]) => EventQueryBuilderMock>;
+  andWhere: jest.MockedFunction<(...args: unknown[]) => EventQueryBuilderMock>;
+  orderBy: jest.MockedFunction<(...args: unknown[]) => EventQueryBuilderMock>;
+  skip: jest.MockedFunction<(skip: number) => EventQueryBuilderMock>;
+  take: jest.MockedFunction<(take: number) => EventQueryBuilderMock>;
+  getMany: jest.MockedFunction<() => Promise<Event[]>>;
+  getManyAndCount: jest.MockedFunction<() => Promise<[Event[], number]>>;
+};
+
+const createEventQueryBuilderMock = (): EventQueryBuilderMock => {
+  const qb: Partial<EventQueryBuilderMock> = {};
+
+  qb.leftJoinAndSelect = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.where = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.andWhere = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.orderBy = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.skip = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.take = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.getMany = jest.fn().mockResolvedValue([] as Event[]);
+  qb.getManyAndCount = jest.fn().mockResolvedValue([[] as Event[], 0]);
+
+  return qb as EventQueryBuilderMock;
+};
 
 describe('EventsService', () => {
   let service: EventsService;
-  let eventRepository: Repository<Event>;
-  let registrationRepository: Repository<EventRegistration>;
   let eventRepoMock: {
     create: jest.Mock;
     save: jest.Mock;
     findOne: jest.Mock;
     createQueryBuilder: jest.Mock;
     remove: jest.Mock;
-    increment: jest.Mock;
   };
-  let registrationRepoMock: {
-    create: jest.Mock;
-    save: jest.Mock;
-    findOne: jest.Mock;
-    createQueryBuilder: jest.Mock;
-  };
+  let userRepoMock: { findOne: jest.Mock };
 
   beforeEach(() => {
     eventRepoMock = {
@@ -30,24 +50,19 @@ describe('EventsService', () => {
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(),
       remove: jest.fn(),
-      increment: jest.fn(),
     };
-    eventRepository = eventRepoMock as unknown as Repository<Event>;
 
-    registrationRepoMock = {
-      create: jest.fn(),
-      save: jest.fn(),
+    userRepoMock = {
       findOne: jest.fn(),
-      createQueryBuilder: jest.fn(),
     };
-    registrationRepository =
-      registrationRepoMock as unknown as Repository<EventRegistration>;
 
-    jest.clearAllMocks();
-    service = new EventsService(eventRepository, registrationRepository);
+    service = new EventsService(
+      eventRepoMock as unknown as Repository<Event>,
+      userRepoMock as unknown as Repository<User>,
+    );
   });
 
-  it('creates event with organizer and defaults', async () => {
+  it('creates event with organizer type derived from role', async () => {
     const dto = {
       title: 'Test Event',
       description: 'desc',
@@ -58,110 +73,98 @@ describe('EventsService', () => {
       venueId: 'venue-1',
     };
 
+    userRepoMock.findOne.mockResolvedValue({
+      id: 'admin-1',
+      role: 'admin',
+    } as User);
     const created = { id: 'event-1' } as Event;
     eventRepoMock.create.mockReturnValue(created);
     eventRepoMock.save.mockResolvedValue(created);
 
-    const result = await service.createEvent('user-1', dto);
+    const result = await service.createEvent('admin-1', dto);
 
-    expect(eventRepoMock.create).toHaveBeenCalled();
-    const eventCreateArgs = (eventRepoMock.create.mock.calls[0] ??
-      []) as unknown as [unknown];
-    expect(eventCreateArgs[0]).toEqual(
+    expect(eventRepoMock.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        organizer: { id: 'user-1' },
-        createdBy: { id: 'user-1' },
-        organizer_type: 'scout',
+        organizer: { id: 'admin-1' },
+        createdBy: { id: 'admin-1' },
+        organizer_type: 'admin',
         status: 'pending_approval',
         participantCount: 0,
-        venue: { id: 'venue-1' },
+        venue: { id: 'venue-1' } as Venue,
       }),
     );
     expect(result).toBe(created);
   });
 
-  it('gets ongoing events ordered by start_date', async () => {
-    const qb = createQueryBuilderMock();
-    const events = [{ id: 'event-1' } as Event];
+  it('filters ongoing events within the current window', async () => {
+    const qb = createEventQueryBuilderMock();
+    const events: Event[] = [{ id: 'event-1' } as Event];
     qb.getMany.mockResolvedValue(events);
     eventRepoMock.createQueryBuilder.mockReturnValue(qb);
 
-    const result = await service.getOngoingEvents(5);
+    const query = new EventQueryDto();
+    query.limit = 10;
+
+    const result = await service.getOngoingEvents(query);
 
     expect(qb.where).toHaveBeenCalledWith('event.status = :status', {
       status: 'approved',
     });
+    const firstCall = qb.andWhere.mock.calls[0];
+    const secondCall = qb.andWhere.mock.calls[1];
 
-    expect(qb.andWhere).toHaveBeenCalledWith(
-      'event.start_date >= :now',
-      expect.any(Object),
-    );
-    const andWhereParams = qb.andWhere.mock.calls[0]?.[1] as {
-      now?: unknown;
-    };
-    expect(andWhereParams.now).toBeInstanceOf(Date);
+    expect(firstCall?.[0]).toBe('event.startDate <= :now');
+    expect((firstCall?.[1] as { now?: Date }).now).toBeInstanceOf(Date);
 
+    expect(secondCall?.[0]).toBe('event.endDate >= :now');
+    expect((secondCall?.[1] as { now?: Date }).now).toBeInstanceOf(Date);
     expect(qb.orderBy).toHaveBeenCalledWith('event.startDate', 'ASC');
-
-    expect(qb.take).toHaveBeenCalledWith(5);
+    expect(qb.take).toHaveBeenCalledWith(10);
     expect(result).toEqual(events);
   });
 
-  it('prevents registration for non-approved events', async () => {
-    const event = { id: 'event-1', status: 'pending_approval' } as Event;
-    eventRepoMock.findOne.mockResolvedValue(event);
+  it('returns paginated events with total', async () => {
+    const qb = createEventQueryBuilderMock();
+    const event = { id: 'event-1' } as Event;
+    const paged: [Event[], number] = [[event], 1];
+    qb.getManyAndCount.mockResolvedValue(paged);
+    eventRepoMock.createQueryBuilder.mockReturnValue(qb);
 
-    await expect(
-      service.registerForEvent('event-1', 'player-1'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    const query = new EventQueryDto();
+    query.limit = 5;
+    query.offset = 10;
+
+    const result = await service.getEvents(query);
+
+    expect(qb.skip).toHaveBeenCalledWith(10);
+    expect(qb.take).toHaveBeenCalledWith(5);
+    expect(result).toEqual({ data: [event], total: 1 });
   });
 
-  it('registers player and increments participant count', async () => {
+  it('blocks non-admins from approving events', async () => {
+    userRepoMock.findOne.mockResolvedValue({
+      id: 'user-1',
+      role: 'scout',
+    } as User);
+
+    await expect(
+      service.approveEvent('event-1', 'user-1', true),
+    ).rejects.toBeInstanceOf(HttpError);
+  });
+
+  it('prevents non-owners and non-admins from updating events', async () => {
     const event = {
       id: 'event-1',
-      status: 'approved',
-      maxParticipants: 10,
-      participantCount: 0,
-      registrationDeadline: null,
+      organizer: { id: 'owner-1' } as User,
     } as Event;
-
     eventRepoMock.findOne.mockResolvedValue(event);
-
-    // Mock the query builder for duplicate check
-    const qb = createQueryBuilderMock();
-    qb.getOne.mockResolvedValue(null);
-    registrationRepoMock.createQueryBuilder.mockReturnValue(qb);
-
-    const registration = { id: 'reg-1' } as EventRegistration;
-    registrationRepoMock.create.mockReturnValue(registration);
-    registrationRepoMock.save.mockResolvedValue(registration);
-    eventRepoMock.increment.mockResolvedValue({ affected: 1 });
-
-    const result = await service.registerForEvent('event-1', 'player-1');
-
-    expect(registrationRepoMock.create).toHaveBeenCalled();
-    const registrationCreateArgs = (registrationRepoMock.create.mock.calls[0] ??
-      []) as unknown as [unknown];
-    expect(registrationCreateArgs[0]).toEqual(
-      expect.objectContaining({
-        event: { id: 'event-1' },
-        player: { userId: 'player-1' } as PlayerProfile,
-        status: 'pending',
-      }),
-    );
-    expect(result).toBe(registration);
-    expect(eventRepoMock.increment).toHaveBeenCalledWith(
-      { id: 'event-1' },
-      'participantCount',
-      1,
-    );
-  });
-
-  it('throws when registration not found on update', async () => {
-    registrationRepoMock.findOne.mockResolvedValue(null);
+    userRepoMock.findOne.mockResolvedValue({
+      id: 'user-2',
+      role: 'scout',
+    } as User);
 
     await expect(
-      service.updateRegistration('reg-1', { status: 'approved' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+      service.updateEvent('event-1', 'user-2', { title: 'New title' }),
+    ).rejects.toBeInstanceOf(HttpError);
   });
 });
