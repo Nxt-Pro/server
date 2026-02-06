@@ -1,4 +1,4 @@
-import { databaseConfig } from './';
+import { databaseConfig, queueConfig } from '.';
 
 export default () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -14,4 +14,5 @@ export default () => ({
 
   // Sub-configs
   database: databaseConfig(),
+  queue: queueConfig(),
 });
