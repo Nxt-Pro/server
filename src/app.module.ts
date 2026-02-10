@@ -11,9 +11,8 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
-import { configuration } from '@/config';
+import { configuration, ConfigValidatorService } from '@/config';
 import { DatabaseService } from '@/database';
-import { ConfigValidatorService } from '@/validators';
 import { HealthModule } from '@/modules/health/health.module';
 
 @Module({
