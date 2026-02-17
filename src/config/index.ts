@@ -1,5 +1,7 @@
+export * from './ai.config';
 export * from './config-validator.service';
 export { default as configuration } from './configuration';
-export { default as databaseConfig } from './database.config';
+export * from './database.config';
 export * from './queue.config';
 export * from './typeorm.config';
+export * from './upload.config';

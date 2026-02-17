@@ -1,4 +1,4 @@
-import { AnalysisType } from '.';
+import { AnalysisType } from '@/common/enums';
 
 export interface OutfieldSkillScores {
   pace: number;

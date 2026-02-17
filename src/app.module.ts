@@ -11,6 +11,7 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
+import { AiModule } from './integrations/ai/ai.module';
 import { configuration, ConfigValidatorService } from '@/config';
 import { DatabaseService } from '@/database';
 import { HealthModule } from '@/modules/health/health.module';
@@ -41,6 +42,7 @@ import { HealthModule } from '@/modules/health/health.module';
 
     // Feature modules
     HealthModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [

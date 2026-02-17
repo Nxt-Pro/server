@@ -1,4 +1,4 @@
-import { AnalysisType, JobStatus } from '.';
+import { AnalysisType, JobStatus } from '@/common/enums';
 
 export interface VideoUploadJobPayload {
   videoId: string;
@@ -12,6 +12,7 @@ export interface VideoUploadJobPayload {
 
 export interface VideoModerationJobPayload {
   videoId: string;
+  userId: string;
   attachmentId: string;
   videoUrl: string;
 }
@@ -39,6 +40,7 @@ export interface JobProgress {
   status: JobStatus;
   progress: number;
   currentStep: string;
+  currentStepIndex: number;
   totalSteps: number;
   startedAt: Date;
   completedAt?: Date;

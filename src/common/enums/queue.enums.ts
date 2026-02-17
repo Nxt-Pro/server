@@ -1,4 +1,4 @@
-/* eslint-disable no-unused-vars -- Enum members are public API for queues */
+/* eslint-disable no-unused-vars */
 export enum QueueName {
   VIDEO_UPLOAD = 'video-upload',
   SKILL_ANALYSIS = 'skill-analysis',
@@ -42,3 +42,4 @@ export enum GoalkeeperSkill {
   KICKING = 'kicking',
   POSITIONING = 'positioning',
 }
+/* eslint-enable no-unused-vars */

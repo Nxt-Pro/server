@@ -1,4 +1,4 @@
-import { databaseConfig, queueConfig } from '.';
+import { aiConfig, databaseConfig, queueConfig, uploadConfig } from '.';
 
 export default () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -15,4 +15,6 @@ export default () => ({
   // Sub-configs
   database: databaseConfig(),
   queue: queueConfig(),
+  ai: aiConfig(),
+  upload: uploadConfig(),
 });
