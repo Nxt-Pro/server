@@ -1,6 +1,7 @@
 import {
   DeepPartial,
   DeleteResult,
+  EntityManager,
   FindManyOptions,
   FindOneOptions,
   FindOptionsOrder,
@@ -35,18 +36,12 @@ export abstract class BaseRepository<TEntity extends ObjectLiteral> {
     return this.repository.save(entity);
   }
 
-  async save(entity: DeepPartial<TEntity>): Promise<TEntity> {
-    return this.repository.save(entity);
-  }
-
   async findOne(options: FindOneOptions<TEntity>): Promise<TEntity | null> {
     return this.repository.findOne(options);
   }
 
-  async findById(id: string): Promise<TEntity | null> {
-    return this.repository.findOneBy({
-      id,
-    } as unknown as FindOptionsWhere<TEntity>);
+  async findById(id: TEntity['id']): Promise<TEntity | null> {
+    return this.repository.findOneBy({ id } as FindOptionsWhere<TEntity>);
   }
 
   async find(options?: FindManyOptions<TEntity>): Promise<TEntity[]> {
@@ -92,11 +87,25 @@ export abstract class BaseRepository<TEntity extends ObjectLiteral> {
     return this.repository.update(filter, data);
   }
 
+  async softDelete(filter: FindOptionsWhere<TEntity>): Promise<UpdateResult> {
+    return this.repository.softDelete(filter);
+  }
+
+  async restore(filter: FindOptionsWhere<TEntity>): Promise<UpdateResult> {
+    return this.repository.restore(filter);
+  }
+
   async delete(filter: FindOptionsWhere<TEntity>): Promise<DeleteResult> {
     return this.repository.delete(filter);
   }
 
   async exists(filter: FindOptionsWhere<TEntity>): Promise<boolean> {
     return this.repository.exists({ where: filter });
+  }
+
+  async runInTransaction<T>(
+    work: (_manager: EntityManager) => Promise<T>,
+  ): Promise<T> {
+    return this.repository.manager.connection.transaction(work);
   }
 }

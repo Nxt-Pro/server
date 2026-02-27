@@ -3,16 +3,24 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import {
   AttachmentRepository,
+  AuditLogRepository,
   MediaModerationRepository,
   PlayerProfileRepository,
+  ReportRepository,
+  ScoutProfileRepository,
+  UserRepository,
   VideoRepository,
   VideoSkillAnalysisRepository,
 } from './repositories';
 
 import {
   Attachment,
+  AuditLog,
   MediaModeration,
   PlayerProfile,
+  Report,
+  ScoutProfile,
+  User,
   Video,
   VideoSkillAnalysis,
 } from '@/database/entities';
@@ -20,26 +28,38 @@ import {
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      Video,
       Attachment,
-      PlayerProfile,
-      VideoSkillAnalysis,
+      AuditLog,
       MediaModeration,
+      PlayerProfile,
+      Report,
+      ScoutProfile,
+      User,
+      Video,
+      VideoSkillAnalysis,
     ]),
   ],
   providers: [
-    VideoRepository,
     AttachmentRepository,
-    PlayerProfileRepository,
-    VideoSkillAnalysisRepository,
+    AuditLogRepository,
     MediaModerationRepository,
+    PlayerProfileRepository,
+    ReportRepository,
+    ScoutProfileRepository,
+    UserRepository,
+    VideoRepository,
+    VideoSkillAnalysisRepository,
   ],
   exports: [
-    VideoRepository,
     AttachmentRepository,
-    PlayerProfileRepository,
-    VideoSkillAnalysisRepository,
+    AuditLogRepository,
     MediaModerationRepository,
+    PlayerProfileRepository,
+    ReportRepository,
+    ScoutProfileRepository,
+    UserRepository,
+    VideoRepository,
+    VideoSkillAnalysisRepository,
   ],
 })
 export class RepositoriesModule {}

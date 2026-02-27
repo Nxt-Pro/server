@@ -9,8 +9,9 @@ import {
   Request,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request as ExpressRequest } from 'express';
-import { AnalyzeVideoDto, VideoUploadDto } from './dto';
+import { AnalyzeVideoDto, RecalculatePlayerDto, VideoUploadDto } from './dto';
 import { VideoAnalysisService } from './video-analysis.service';
 
 import { JobProgress } from '@/common/types';
@@ -27,14 +28,19 @@ interface RequestWithUser extends ExpressRequest {
 //@UseGuards(JwtAuthGuard)
 export class AiController {
   private readonly videoAnalysisService: VideoAnalysisService;
+  private readonly configService: ConfigService;
 
-  constructor(videoAnalysisService: VideoAnalysisService) {
+  constructor(
+    videoAnalysisService: VideoAnalysisService,
+    configService: ConfigService,
+  ) {
     this.videoAnalysisService = videoAnalysisService;
+    this.configService = configService;
   }
 
   /**
-   * Queue video upload and moderation
-   * POST /api/ai/video/upload
+   * Queue video upload and moderation.
+   * POST (/api/ai/video/upload)
    */
   @Post('video/upload')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -56,8 +62,8 @@ export class AiController {
   }
 
   /**
-   * Request skill analysis for a video
-   * POST /api/ai/video/analyze
+   * Request skill analysis for a video.
+   * POST (/api/ai/video/analyze)
    */
   @Post('video/analyze')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -80,8 +86,8 @@ export class AiController {
   }
 
   /**
-   * Get video upload/moderation status
-   * GET /api/ai/job/:jobId/upload-status
+   * Get video upload/moderation status.
+   * GET (/api/ai/job/:jobId/upload-status)
    */
   @Get('job/:jobId/upload-status')
   async getUploadStatus(
@@ -101,8 +107,8 @@ export class AiController {
   }
 
   /**
-   * Get skill analysis status and progress
-   * GET /api/ai/job/:jobId/analysis-status
+   * Get skill analysis status and progress.
+   * GET (/api/ai/job/:jobId/analysis-status)
    */
   @Get('job/:jobId/analysis-status')
   async getAnalysisStatus(
@@ -122,8 +128,8 @@ export class AiController {
   }
 
   /**
-   * Get all active jobs for current user
-   * GET /api/ai/user/active-jobs
+   * Get all active jobs for current user.
+   * GET (/api/ai/user/active-jobs)
    */
   @Get('user/active-jobs')
   async getUserActiveJobs(
@@ -135,8 +141,8 @@ export class AiController {
   }
 
   /**
-   * Cancel a job
-   * POST /api/ai/job/:jobId/cancel
+   * Cancel a job.
+   * POST (/api/ai/job/:jobId/cancel)
    */
   @Post('job/:jobId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -148,8 +154,8 @@ export class AiController {
   }
 
   /**
-   * Get analysis result
-   * GET /api/ai/video/:videoId/result
+   * Get analysis result.
+   * GET (/api/ai/video/:videoId/result)
    */
   @Get('video/:videoId/result')
   async getAnalysisResult(
@@ -158,9 +164,33 @@ export class AiController {
     return await this.videoAnalysisService.getAnalysisResult(videoId);
   }
 
+  /**
+   * Get video analysis status by videoId.
+   * GET (/api/ai/video/:id/status)
+   */
+  @Get('video/:id/status')
+  async getVideoStatus(@Param('id') id: string) {
+    return await this.videoAnalysisService.getVideoStatus(id);
+  }
+
+  /**
+   * Recalculate a player's AI score.
+   * POST (/api/ai/player/recalculate)
+   *
+   * Triggered by cron / admin / queue. Not directly by clients.
+   */
+  @Post('player/recalculate')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async recalculatePlayerScore(@Body() dto: RecalculatePlayerDto) {
+    return await this.videoAnalysisService.recalculatePlayerScore(
+      dto.playerId,
+      dto.analysisType,
+    );
+  }
+
   private getUserId(req: RequestWithUser): string {
-    // For testing without auth in development
-    const isDev = process.env.NODE_ENV !== 'production';
+    // Dev-mode fallback — remove once JwtAuthGuard is wired
+    const isDev = this.configService.get<string>('nodeEnv') !== 'production';
     const id = req.user?.id || (isDev ? 'test-user-123' : undefined);
 
     if (!id) {

@@ -1,8 +1,8 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import {
   HttpExceptionFilter,
@@ -12,9 +12,12 @@ import {
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
 import { AiModule } from './integrations/ai/ai.module';
+
 import { configuration, ConfigValidatorService } from '@/config';
 import { DatabaseService } from '@/database';
+import { AdminModule } from '@/modules/admin/admin.module';
 import { HealthModule } from '@/modules/health/health.module';
+import { PlayerModule } from '@/modules/player/player.module';
 
 @Module({
   imports: [
@@ -43,6 +46,8 @@ import { HealthModule } from '@/modules/health/health.module';
     // Feature modules
     HealthModule,
     AiModule,
+    AdminModule,
+    PlayerModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
+import { AnalysisType } from '@/common/enums';
 import {
   JobProgress,
   SkillAnalysisJobPayload,
@@ -7,6 +8,7 @@ import {
 } from '@/common/types';
 import { VideoSkillAnalysis } from '@/database/entities';
 import {
+  PlayerProfileRepository,
   VideoRepository,
   VideoSkillAnalysisRepository,
 } from '@/database/repositories';
@@ -20,17 +22,20 @@ export class VideoAnalysisService {
   private readonly skillAnalysisProducer: SkillAnalysisProducer;
   private readonly videoRepository: VideoRepository;
   private readonly analysisRepository: VideoSkillAnalysisRepository;
+  private readonly playerProfileRepository: PlayerProfileRepository;
 
   constructor(
     videoUploadProducer: VideoUploadProducer,
     skillAnalysisProducer: SkillAnalysisProducer,
     videoRepository: VideoRepository,
     analysisRepository: VideoSkillAnalysisRepository,
+    playerProfileRepository: PlayerProfileRepository,
   ) {
     this.videoUploadProducer = videoUploadProducer;
     this.skillAnalysisProducer = skillAnalysisProducer;
     this.videoRepository = videoRepository;
     this.analysisRepository = analysisRepository;
+    this.playerProfileRepository = playerProfileRepository;
   }
 
   /**
@@ -102,10 +107,13 @@ export class VideoAnalysisService {
       };
     }
 
-    await this.analysisRepository.save({
-      videoId: payload.videoId,
-      status: 'queued',
-    });
+    await this.analysisRepository.upsert(
+      {
+        videoId: payload.videoId,
+        status: 'queued',
+      },
+      ['videoId'],
+    );
 
     // Queue the analysis job
     const result = await this.skillAnalysisProducer.queueSkillAnalysis({
@@ -205,5 +213,110 @@ export class VideoAnalysisService {
     }
 
     return result;
+  }
+
+  /**
+   * Get video analysis status by videoId (convenience endpoint)
+   * GET /api/ai/video/:id/status
+   */
+  async getVideoStatus(videoId: string): Promise<{
+    videoId: string;
+    status: string;
+    aiScore: Record<string, unknown> | null;
+    processedAt: Date | null;
+    failureReason: string | null;
+  }> {
+    const analysis = await this.analysisRepository.findOne({
+      where: { videoId },
+    });
+
+    if (!analysis) {
+      throw new NotFoundException(`No analysis found for video ${videoId}`);
+    }
+
+    return {
+      videoId: analysis.videoId,
+      status: analysis.status,
+      aiScore: analysis.status === 'completed' ? analysis.aiScore : null,
+      processedAt: analysis.processedAt ?? null,
+      failureReason: analysis.failureReason ?? null,
+    };
+  }
+
+  /**
+   * Recalculate a player's AI score by re-analyzing their latest videos
+   * POST /api/ai/player/recalculate
+   *
+   * Intended to be triggered by cron / admin / queue — not directly by clients.
+   */
+  async recalculatePlayerScore(
+    playerId: string,
+    analysisType?: AnalysisType,
+  ): Promise<{ jobIds: string[]; message: string }> {
+    this.logger.log(`Recalculating AI score for player ${playerId}`);
+
+    const player = await this.playerProfileRepository.findByUserId(playerId);
+
+    if (!player) {
+      throw new NotFoundException(`Player ${playerId} not found`);
+    }
+
+    // Find all completed analyses for this player's videos
+    // We re-queue analysis for videos that already have results
+    const videos = await this.videoRepository.find({
+      where: {},
+      relations: [
+        'attachment',
+        'attachment.post',
+        'attachment.post.user',
+        'attachment.post.user.playerProfile',
+        'skillAnalysis',
+      ],
+    });
+
+    // Filter to this player's videos that have valid URLs
+    const playerVideos = videos.filter(
+      v => v.attachment?.post?.userId === playerId && v.attachment?.url,
+    );
+
+    if (playerVideos.length === 0) {
+      throw new NotFoundException(
+        `No uploaded videos found for player ${playerId}`,
+      );
+    }
+
+    const detectedType =
+      analysisType ??
+      (player.position?.toLowerCase() === 'goalkeeper'
+        ? AnalysisType.GOALKEEPER
+        : AnalysisType.OUTFIELD);
+
+    const payloads: SkillAnalysisJobPayload[] = playerVideos.map(v => ({
+      videoId: v.id,
+      playerId,
+      videoUrl: v.attachment.url,
+      analysisType: detectedType,
+      requestedBy: playerId,
+    }));
+
+    // Reset existing analyses to 'queued'
+    for (const payload of payloads) {
+      await this.analysisRepository.upsert(
+        { videoId: payload.videoId, status: 'queued' },
+        ['videoId'],
+      );
+    }
+
+    const result =
+      await this.skillAnalysisProducer.queueBatchAnalysis(payloads);
+
+    this.logger.log(
+      `Queued ${result.jobIds.length} recalculation jobs for player ${playerId}`,
+    );
+
+    return {
+      jobIds: result.jobIds,
+      message: `Queued ${result.jobIds.length} video(s) for re-analysis`,
+    };
   }
 }
