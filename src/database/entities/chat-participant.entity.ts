@@ -14,7 +14,7 @@ export class ChatParticipant extends BaseEntity {
   user: User;
 
   @Column({ type: 'int', default: 0, name: 'unread_count' })
-  unread_count: number;
+  unreadCount: number;
 
   @Column({
     type: 'enum',

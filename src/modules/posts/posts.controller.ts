@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   Param,
@@ -8,23 +9,26 @@ import {
   Patch,
   Post,
   Query,
-  DefaultValuePipe,
 } from '@nestjs/common';
-import { PostsService } from './posts.service';
 import {
+  AddAttachmentDto,
+  CreateAiVideoDto,
   CreateCommentDto,
   CreatePostDto,
-  CreateAiVideoDto,
-  AddAttachmentDto,
-  UpdateVideoDto,
   ReportPostDto,
+  UpdateVideoDto,
 } from './dto';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { PostsService } from './posts.service';
 import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
 @Controller('post')
 export class PostsController {
-  constructor(private readonly postsService: PostsService) {}
+  private readonly postsService: PostsService;
+
+  constructor(postsService: PostsService) {
+    this.postsService = postsService;
+  }
 
   @Post()
   createPost(@CurrentUser() user: JwtPayload, @Body() dto: CreatePostDto) {

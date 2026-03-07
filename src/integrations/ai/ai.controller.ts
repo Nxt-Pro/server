@@ -8,34 +8,28 @@ import {
   Post,
   Request,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Request as ExpressRequest } from 'express';
 import { AnalyzeVideoDto, RecalculatePlayerDto, VideoUploadDto } from './dto';
 import { VideoAnalysisService } from './video-analysis.service';
 
+import { JwtAuthGuard } from '@/common/guards';
 import { JobProgress } from '@/common/types';
 import { VideoSkillAnalysis } from '@/database/entities';
 
-// import { JwtAuthGuard } from '@/common/guards';
-
 // Request with authenticated user
 interface RequestWithUser extends ExpressRequest {
-  user?: { id: string };
+  user?: { sub: string };
 }
 
 @Controller('ai')
-//@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class AiController {
   private readonly videoAnalysisService: VideoAnalysisService;
-  private readonly configService: ConfigService;
 
-  constructor(
-    videoAnalysisService: VideoAnalysisService,
-    configService: ConfigService,
-  ) {
+  constructor(videoAnalysisService: VideoAnalysisService) {
     this.videoAnalysisService = videoAnalysisService;
-    this.configService = configService;
   }
 
   /**
@@ -189,10 +183,7 @@ export class AiController {
   }
 
   private getUserId(req: RequestWithUser): string {
-    // Dev-mode fallback — remove once JwtAuthGuard is wired
-    const isDev = this.configService.get<string>('nodeEnv') !== 'production';
-    const id = req.user?.id || (isDev ? 'test-user-123' : undefined);
-
+    const id = req.user?.sub;
     if (!id) {
       throw new UnauthorizedException('Authentication required');
     }

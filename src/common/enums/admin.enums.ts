@@ -79,5 +79,3 @@ export enum SortOrder {
   ASC = 'ASC',
   DESC = 'DESC',
 }
-
-/* eslint-enable no-unused-vars */

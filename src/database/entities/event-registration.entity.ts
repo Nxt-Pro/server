@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, Index, Unique } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Event } from './event.entity';
 import { PlayerProfile } from './player-profile.entity';
@@ -29,7 +29,7 @@ export class EventRegistration extends BaseEntity {
   status: 'pending' | 'approved' | 'rejected';
 
   @Column({ type: 'timestamptz', name: 'registered_at' })
-  registered_at: Date;
+  registeredAt: Date;
 
   @Column({ type: 'boolean', default: false })
   cancelled: boolean;

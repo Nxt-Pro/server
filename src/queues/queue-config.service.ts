@@ -20,7 +20,8 @@ export class QueueConfigService {
     tls?: object;
     maxRetriesPerRequest: null;
     enableReadyCheck: boolean;
-    retryStrategy: (_times: number) => number;
+    // eslint-disable-next-line no-unused-vars
+    retryStrategy: (times: number) => number;
   } {
     return this.redisConnection;
   }

@@ -1,42 +1,62 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { PlayerProfileResponseDto } from './dto/player-profile-response.dto';
-import type { UpdatePlayerProfileDto } from './dto/update-player-profile.dto';
-import type { ScoutProfileResponseDto } from './dto/scout-profile-response.dto';
-import type { UpdateScoutProfileDto } from './dto/update-scout-profile.dto';
-import type { UserSummaryDto } from './dto/user-summary.dto';
 import type {
+  CreateScoutNoteDto,
+  GlobalSearchQueryDto,
   ListPlayersQueryDto,
   ListScoutsQueryDto,
-  GlobalSearchQueryDto,
-} from './dto/discovery-query.dto';
+  PlayerProfileResponseDto,
+  ScoutProfileResponseDto,
+  UpdatePlayerProfileDto,
+  UpdateScoutNoteDto,
+  UpdateScoutProfileDto,
+  UserSummaryDto,
+} from './dto';
+
 import {
   Block,
   Mute,
   PlayerProfile,
+  ScoutNotes,
   ScoutProfile,
   User,
 } from '@/database/entities';
 
 @Injectable()
 export class ProfilesService {
+  private readonly userRepository: Repository<User>;
+  private readonly playerProfileRepository: Repository<PlayerProfile>;
+  private readonly scoutProfileRepository: Repository<ScoutProfile>;
+  private readonly blockRepository: Repository<Block>;
+  private readonly muteRepository: Repository<Mute>;
+  private readonly scoutNotesRepository: Repository<ScoutNotes>;
+
   constructor(
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    userRepository: Repository<User>,
     @InjectRepository(PlayerProfile)
-    private readonly playerProfileRepository: Repository<PlayerProfile>,
+    playerProfileRepository: Repository<PlayerProfile>,
     @InjectRepository(ScoutProfile)
-    private readonly scoutProfileRepository: Repository<ScoutProfile>,
+    scoutProfileRepository: Repository<ScoutProfile>,
     @InjectRepository(Block)
-    private readonly blockRepository: Repository<Block>,
+    blockRepository: Repository<Block>,
     @InjectRepository(Mute)
-    private readonly muteRepository: Repository<Mute>,
-  ) {}
+    muteRepository: Repository<Mute>,
+    @InjectRepository(ScoutNotes)
+    scoutNotesRepository: Repository<ScoutNotes>,
+  ) {
+    this.userRepository = userRepository;
+    this.playerProfileRepository = playerProfileRepository;
+    this.scoutProfileRepository = scoutProfileRepository;
+    this.blockRepository = blockRepository;
+    this.muteRepository = muteRepository;
+    this.scoutNotesRepository = scoutNotesRepository;
+  }
 
   async getPlayerProfile(profileId: string): Promise<PlayerProfileResponseDto> {
     const profile = await this.playerProfileRepository.findOne({
@@ -66,6 +86,7 @@ export class ProfilesService {
       throw new ForbiddenException('Only players can update player profile');
     }
     this.applyPlayerProfileUpdates(profile, dto);
+    profile.profileCompleteness = this.calculatePlayerCompleteness(profile);
     await this.playerProfileRepository.save(profile);
     return this.toPlayerProfileResponse(profile);
   }
@@ -98,6 +119,7 @@ export class ProfilesService {
       throw new ForbiddenException('Only scouts can update scout profile');
     }
     this.applyScoutProfileUpdates(profile, dto);
+    profile.profileCompleteness = this.calculateScoutCompleteness(profile);
     await this.scoutProfileRepository.save(profile);
     return this.toScoutProfileResponse(profile);
   }
@@ -313,6 +335,158 @@ export class ProfilesService {
     return { message: 'User muted' };
   }
 
+  async unblockUser(
+    blockerId: string,
+    blockedId: string,
+  ): Promise<{ message: string }> {
+    const result = await this.blockRepository.delete({ blockerId, blockedId });
+    if (!result.affected) {
+      throw new NotFoundException('Block not found');
+    }
+    return { message: 'User unblocked' };
+  }
+
+  async unmuteUser(
+    muterId: string,
+    mutedId: string,
+  ): Promise<{ message: string }> {
+    const result = await this.muteRepository.delete({ muterId, mutedId });
+    if (!result.affected) {
+      throw new NotFoundException('Mute not found');
+    }
+    return { message: 'User unmuted' };
+  }
+
+  async createScoutNote(
+    scoutUserId: string,
+    dto: CreateScoutNoteDto,
+  ): Promise<ScoutNotes> {
+    const scoutProfile = await this.scoutProfileRepository.findOne({
+      where: { userId: scoutUserId },
+    });
+    if (!scoutProfile) {
+      throw new ForbiddenException('Only scouts can create notes');
+    }
+    const playerProfile = await this.playerProfileRepository.findOne({
+      where: { userId: dto.playerId },
+    });
+    if (!playerProfile) {
+      throw new NotFoundException('Player not found');
+    }
+
+    const note = this.scoutNotesRepository.create({
+      scoutId: scoutUserId,
+      playerId: dto.playerId,
+      title: dto.title,
+      content: dto.content,
+      isPrivate: dto.isPrivate ?? true,
+    });
+    const saved = await this.scoutNotesRepository.save(note);
+
+    // Increment total notes count
+    await this.scoutProfileRepository.increment(
+      { userId: scoutUserId },
+      'totalNotes',
+      1,
+    );
+
+    return saved;
+  }
+
+  async updateScoutNote(
+    noteId: string,
+    scoutUserId: string,
+    dto: UpdateScoutNoteDto,
+  ): Promise<ScoutNotes> {
+    const note = await this.scoutNotesRepository.findOne({
+      where: { id: noteId },
+    });
+    if (!note) {
+      throw new NotFoundException('Note not found');
+    }
+    if (note.scoutId !== scoutUserId) {
+      throw new ForbiddenException('You can only edit your own notes');
+    }
+
+    if (dto.title !== undefined) note.title = dto.title;
+    if (dto.content !== undefined) note.content = dto.content;
+    if (dto.isPrivate !== undefined) note.isPrivate = dto.isPrivate;
+
+    return this.scoutNotesRepository.save(note);
+  }
+
+  async deleteScoutNote(
+    noteId: string,
+    scoutUserId: string,
+  ): Promise<{ message: string }> {
+    const note = await this.scoutNotesRepository.findOne({
+      where: { id: noteId },
+    });
+    if (!note) {
+      throw new NotFoundException('Note not found');
+    }
+    if (note.scoutId !== scoutUserId) {
+      throw new ForbiddenException('You can only delete your own notes');
+    }
+
+    await this.scoutNotesRepository.remove(note);
+
+    // Decrement total notes count
+    await this.scoutProfileRepository.decrement(
+      { userId: scoutUserId },
+      'totalNotes',
+      1,
+    );
+
+    return { message: 'Note deleted' };
+  }
+
+  async getScoutNotes(
+    scoutUserId: string,
+    playerId?: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{
+    data: ScoutNotes[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const where: Record<string, string> = { scoutId: scoutUserId };
+    if (playerId) {
+      where.playerId = playerId;
+    }
+
+    const [data, total] = await this.scoutNotesRepository.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getScoutNote(noteId: string, scoutUserId: string): Promise<ScoutNotes> {
+    const note = await this.scoutNotesRepository.findOne({
+      where: { id: noteId },
+    });
+    if (!note) {
+      throw new NotFoundException('Note not found');
+    }
+    if (note.scoutId !== scoutUserId) {
+      throw new ForbiddenException('You can only view your own notes');
+    }
+    return note;
+  }
+
   async uploadAvatar(userId: string, url: string): Promise<{ url: string }> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -456,7 +630,7 @@ export class ProfilesService {
       country: profile.country ?? null,
       bio: profile.bio ?? null,
       profile_picture_url: profile.profilePictureUrl ?? null,
-      cover_image_url: profile.coverImageUrl ?? null,
+      cover_image_url: (profile.coverImageUrl as string | null) ?? null,
       is_verified: profile.isVerified,
       basic_verified_at: profile.basicVerifiedAt?.toISOString() ?? null,
       club_verified_at: profile.clubVerifiedAt?.toISOString() ?? null,
@@ -494,7 +668,7 @@ export class ProfilesService {
       countries_covered: profile.countriesCovered ?? [],
       bio: profile.bio ?? null,
       profile_picture_url: profile.profilePictureUrl ?? null,
-      cover_image_url: profile.coverImageUrl ?? null,
+      cover_image_url: (profile.coverImageUrl as string | null) ?? null,
       total_notes: profile.totalNotes,
       verification_status: profile.verificationStatus,
       profile_completeness:
@@ -504,5 +678,50 @@ export class ProfilesService {
       created_at: profile.createdAt.toISOString(),
       updated_at: profile.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * Calculates player profile completeness as a percentage (0–100).
+   * Checks the most important fields a player should fill out.
+   */
+  private calculatePlayerCompleteness(profile: PlayerProfile): number {
+    const fields: boolean[] = [
+      !!profile.fullName,
+      !!profile.dateOfBirth,
+      !!profile.nationality,
+      !!profile.position,
+      !!profile.preferredFoot,
+      profile.heightCm != null && profile.heightCm > 0,
+      profile.weightKg != null && profile.weightKg > 0,
+      !!profile.city,
+      !!profile.country,
+      !!profile.bio,
+      !!profile.profilePictureUrl,
+      !!profile.coverImageUrl,
+      !!profile.clubName,
+      !!profile.availabilityStatus,
+    ];
+    const filled = fields.filter(Boolean).length;
+    return Math.round((filled / fields.length) * 100);
+  }
+
+  /**
+   * Calculates scout profile completeness as a percentage (0–100).
+   */
+  private calculateScoutCompleteness(profile: ScoutProfile): number {
+    const fields: boolean[] = [
+      !!profile.fullName,
+      !!profile.organization,
+      !!profile.organizationType,
+      !!profile.licenseNumber,
+      profile.yearsExperience != null && profile.yearsExperience > 0,
+      (profile.scoutingPositions?.length ?? 0) > 0,
+      (profile.countriesCovered?.length ?? 0) > 0,
+      !!profile.bio,
+      !!profile.profilePictureUrl,
+      !!profile.coverImageUrl,
+    ];
+    const filled = fields.filter(Boolean).length;
+    return Math.round((filled / fields.length) * 100);
   }
 }

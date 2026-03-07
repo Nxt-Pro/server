@@ -42,4 +42,3 @@ export enum GoalkeeperSkill {
   KICKING = 'kicking',
   POSITIONING = 'positioning',
 }
-/* eslint-enable no-unused-vars */

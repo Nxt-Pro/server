@@ -1,12 +1,16 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ConnectionsService } from './connections.service';
 import { RespondConnectionDto } from './dto';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
 @Controller('player')
 export class PlayerConnectionController {
-  constructor(private readonly connectionsService: ConnectionsService) {}
+  private readonly connectionsService: ConnectionsService;
+
+  constructor(connectionsService: ConnectionsService) {
+    this.connectionsService = connectionsService;
+  }
 
   /** Player connects to scout */
   @Post('scout/:scout_id/connect')
@@ -29,7 +33,11 @@ export class PlayerConnectionController {
 
 @Controller('scout')
 export class ScoutConnectionController {
-  constructor(private readonly connectionsService: ConnectionsService) {}
+  private readonly connectionsService: ConnectionsService;
+
+  constructor(connectionsService: ConnectionsService) {
+    this.connectionsService = connectionsService;
+  }
 
   /** Scout connects to player */
   @Post('player/:player_id/connect')
@@ -43,7 +51,11 @@ export class ScoutConnectionController {
 
 @Controller('player-connection')
 export class PlayerConnectionRespondController {
-  constructor(private readonly connectionsService: ConnectionsService) {}
+  private readonly connectionsService: ConnectionsService;
+
+  constructor(connectionsService: ConnectionsService) {
+    this.connectionsService = connectionsService;
+  }
 
   @Patch(':id/respond')
   respond(
@@ -57,7 +69,11 @@ export class PlayerConnectionRespondController {
 
 @Controller('connection')
 export class ConnectionRespondController {
-  constructor(private readonly connectionsService: ConnectionsService) {}
+  private readonly connectionsService: ConnectionsService;
+
+  constructor(connectionsService: ConnectionsService) {
+    this.connectionsService = connectionsService;
+  }
 
   @Patch(':id/respond')
   respond(
@@ -71,7 +87,11 @@ export class ConnectionRespondController {
 
 @Controller('connections')
 export class ConnectionsListController {
-  constructor(private readonly connectionsService: ConnectionsService) {}
+  private readonly connectionsService: ConnectionsService;
+
+  constructor(connectionsService: ConnectionsService) {
+    this.connectionsService = connectionsService;
+  }
 
   @Get()
   list(@CurrentUser() user: JwtPayload) {

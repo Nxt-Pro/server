@@ -1,15 +1,19 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ProfilesService } from './profiles.service';
 import {
+  GlobalSearchQueryDto,
   ListPlayersQueryDto,
   ListScoutsQueryDto,
-  GlobalSearchQueryDto,
 } from './dto';
+import { ProfilesService } from './profiles.service';
 import { Public } from '@/common/decorators';
 
 @Controller('player')
 export class PlayerDiscoveryController {
-  constructor(private readonly profilesService: ProfilesService) {}
+  private readonly profilesService: ProfilesService;
+
+  constructor(profilesService: ProfilesService) {
+    this.profilesService = profilesService;
+  }
 
   @Public()
   @Get()
@@ -20,7 +24,11 @@ export class PlayerDiscoveryController {
 
 @Controller('scout')
 export class ScoutDiscoveryController {
-  constructor(private readonly profilesService: ProfilesService) {}
+  private readonly profilesService: ProfilesService;
+
+  constructor(profilesService: ProfilesService) {
+    this.profilesService = profilesService;
+  }
 
   @Public()
   @Get()
@@ -31,7 +39,11 @@ export class ScoutDiscoveryController {
 
 @Controller('search')
 export class SearchController {
-  constructor(private readonly profilesService: ProfilesService) {}
+  private readonly profilesService: ProfilesService;
+
+  constructor(profilesService: ProfilesService) {
+    this.profilesService = profilesService;
+  }
 
   @Public()
   @Get('global')

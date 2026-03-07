@@ -11,7 +11,6 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Request as ExpressRequest } from 'express';
 
 import {
@@ -37,7 +36,7 @@ import {
 import { AnalyticsGranularity, AnalyticsPeriod } from '@/common/enums';
 
 interface RequestWithAdmin extends ExpressRequest {
-  user?: { id: string; role: string };
+  user?: { sub: string; role: string };
 }
 
 @Controller('admin')
@@ -47,20 +46,17 @@ export class AdminController {
   private readonly verificationService: AdminVerificationService;
   private readonly analyticsService: AdminAnalyticsService;
   private readonly auditService: AdminAuditService;
-  private readonly configService: ConfigService;
 
   constructor(
     moderationService: AdminModerationService,
     verificationService: AdminVerificationService,
     analyticsService: AdminAnalyticsService,
     auditService: AdminAuditService,
-    configService: ConfigService,
   ) {
     this.moderationService = moderationService;
     this.verificationService = verificationService;
     this.analyticsService = analyticsService;
     this.auditService = auditService;
-    this.configService = configService;
   }
 
   /**
@@ -183,8 +179,7 @@ export class AdminController {
   }
 
   private getAdminId(req: RequestWithAdmin): string {
-    // Dev-mode fallback — remove once JwtAuthGuard is wired
-    const isDev = this.configService.get<string>('nodeEnv') !== 'production';
-    return req.user?.id ?? (isDev ? 'admin-dev-000' : 'system');
+    // req.user is guaranteed to be set — JwtAuthGuard + AdminGuard both run before this.
+    return req.user!.sub;
   }
 }

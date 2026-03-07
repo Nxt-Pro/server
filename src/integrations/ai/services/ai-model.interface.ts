@@ -1,5 +1,6 @@
-import type { ModerationAnalysis } from '@/common/types';
+/* eslint-disable no-unused-vars */
 import { AnalysisType, GoalkeeperSkill, OutfieldSkill } from '@/common/enums';
+import type { ModerationAnalysis } from '@/common/types';
 
 export interface SkillAnalysisInput {
   videoUrl: string;

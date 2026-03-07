@@ -1,13 +1,17 @@
-import { Body, Controller, Post, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, LoginDto, RegisterDto, RefreshDto } from './dto';
-import { JwtAuthGuard } from '@/common/guards';
+import { ChangePasswordDto, LoginDto, RefreshDto, RegisterDto } from './dto';
+
 import { CurrentUser, Public } from '@/common/decorators';
 import type { JwtPayload } from '@/common/interfaces';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  private readonly authService: AuthService;
+
+  constructor(authService: AuthService) {
+    this.authService = authService;
+  }
 
   @Public()
   @Post('register')
@@ -22,7 +26,6 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
   async logout(
     @CurrentUser('sub') userId: string,
     @Body('refreshToken') refreshToken?: string,
@@ -38,13 +41,11 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() user: JwtPayload) {
     return this.authService.getMe(user.sub);
   }
 
   @Patch('password')
-  @UseGuards(JwtAuthGuard)
   async changePassword(
     @CurrentUser('sub') userId: string,
     @Body() dto: ChangePasswordDto,

@@ -104,7 +104,8 @@ export abstract class BaseRepository<TEntity extends ObjectLiteral> {
   }
 
   async runInTransaction<T>(
-    work: (_manager: EntityManager) => Promise<T>,
+    // eslint-disable-next-line no-unused-vars
+    work: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     return this.repository.manager.connection.transaction(work);
   }

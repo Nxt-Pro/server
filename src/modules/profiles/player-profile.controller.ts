@@ -1,12 +1,16 @@
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
-import { ProfilesService } from './profiles.service';
 import { UpdatePlayerProfileDto } from './dto';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { ProfilesService } from './profiles.service';
 import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
 @Controller('player/profile')
 export class PlayerProfileController {
-  constructor(private readonly profilesService: ProfilesService) {}
+  private readonly profilesService: ProfilesService;
+
+  constructor(profilesService: ProfilesService) {
+    this.profilesService = profilesService;
+  }
 
   @Get(':id')
   getProfile(@Param('id') id: string) {

@@ -5,7 +5,11 @@ import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
 
 @Controller('comment')
 export class CommentsController {
-  constructor(private readonly postsService: PostsService) {}
+  private readonly postsService: PostsService;
+
+  constructor(postsService: PostsService) {
+    this.postsService = postsService;
+  }
 
   @Delete(':id')
   deleteComment(

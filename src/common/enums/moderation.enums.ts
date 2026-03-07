@@ -11,4 +11,3 @@ export enum ModerationResult {
   FLAGGED = 'flagged',
   REJECTED = 'rejected',
 }
-/* eslint-enable no-unused-vars */

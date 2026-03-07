@@ -1,14 +1,14 @@
 import {
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ForbiddenException,
-  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { RespondConnectionDto } from './dto/respond-connection.dto';
 import type { ConnectionResponseDto } from './dto/connection-response.dto';
 import type { PlayerConnectionResponseDto } from './dto/player-connection-response.dto';
+import type { RespondConnectionDto } from './dto/respond-connection.dto';
 import {
   Connection,
   PlayerConnection,
@@ -19,18 +19,30 @@ import {
 
 @Injectable()
 export class ConnectionsService {
+  private readonly connectionRepository: Repository<Connection>;
+  private readonly playerConnectionRepository: Repository<PlayerConnection>;
+  private readonly playerProfileRepository: Repository<PlayerProfile>;
+  private readonly scoutProfileRepository: Repository<ScoutProfile>;
+  private readonly userRepository: Repository<User>;
+
   constructor(
     @InjectRepository(Connection)
-    private readonly connectionRepository: Repository<Connection>,
+    connectionRepository: Repository<Connection>,
     @InjectRepository(PlayerConnection)
-    private readonly playerConnectionRepository: Repository<PlayerConnection>,
+    playerConnectionRepository: Repository<PlayerConnection>,
     @InjectRepository(PlayerProfile)
-    private readonly playerProfileRepository: Repository<PlayerProfile>,
+    playerProfileRepository: Repository<PlayerProfile>,
     @InjectRepository(ScoutProfile)
-    private readonly scoutProfileRepository: Repository<ScoutProfile>,
+    scoutProfileRepository: Repository<ScoutProfile>,
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-  ) {}
+    userRepository: Repository<User>,
+  ) {
+    this.connectionRepository = connectionRepository;
+    this.playerConnectionRepository = playerConnectionRepository;
+    this.playerProfileRepository = playerProfileRepository;
+    this.scoutProfileRepository = scoutProfileRepository;
+    this.userRepository = userRepository;
+  }
 
   async connectScoutToPlayer(
     scoutUserId: string,

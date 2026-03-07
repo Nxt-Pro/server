@@ -1,9 +1,9 @@
-import { Column, Entity, JoinColumn, ManyToOne, Index } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 
 @Entity('notifications')
-@Index('idx_notifications_read_at', ['read_at'])
+@Index('idx_notifications_read_at', ['readAt'])
 @Index('idx_notifications_type', ['type'])
 @Index('idx_notifications_user_created_at_desc', ['user', 'createdAt'])
 export class Notification extends BaseEntity {
@@ -39,8 +39,8 @@ export class Notification extends BaseEntity {
     | 'new_event';
 
   @Column({ type: 'varchar', nullable: true, name: 'reference_id' })
-  reference_id: string | null;
+  referenceId: string | null;
 
   @Column({ type: 'timestamptz', nullable: true, name: 'read_at' })
-  read_at: Date | null;
+  readAt: Date | null;
 }

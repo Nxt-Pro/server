@@ -1,33 +1,38 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { PostResponseDto } from './dto/post-response.dto';
-import type { CommentResponseDto } from './dto/comment-response.dto';
-import type { CreateCommentDto } from './dto/create-comment.dto';
-import type { CreatePostDto } from './dto/create-post.dto';
-import type { AddAttachmentDto } from './dto/add-attachment.dto';
-import type { CreateAiVideoDto } from './dto/create-ai-video.dto';
-import type { AiVideoResponseDto } from './dto/ai-video-response.dto';
-import type { UpdateVideoDto } from './dto/update-video.dto';
-import type { VideoResponseDto } from './dto/video-response.dto';
-import type { PaginatedPostsDto } from './dto/paginated-posts.dto';
-import type { PaginatedVideosDto } from './dto/paginated-videos.dto';
-import type { PaginatedCommentsDto } from './dto/paginated-comments.dto';
-import type { LikeResponseDto } from './dto/like-response.dto';
-import type { BookmarkResponseDto } from './dto/bookmark-response.dto';
-import type { ShareResponseDto } from './dto/share-response.dto';
-import type { AttachmentResponseDto } from './dto/attachment-response.dto';
-import type { ReportPostDto } from './dto/report-post.dto';
+import type {
+  AddAttachmentDto,
+  AiVideoResponseDto,
+  AttachmentResponseDto,
+  BookmarkResponseDto,
+  CommentResponseDto,
+  CreateAiVideoDto,
+  CreateCommentDto,
+  CreatePostDto,
+  LikeResponseDto,
+  PaginatedCommentsDto,
+  PaginatedPostsDto,
+  PaginatedVideosDto,
+  PostResponseDto,
+  ReportPostDto,
+  ShareResponseDto,
+  UpdateVideoDto,
+  VideoResponseDto,
+} from './dto';
+
 import {
   Attachment,
+  Block,
   Bookmark,
   Comment,
   Like,
   MediaModeration,
+  Mute,
   Post,
   Report,
   User,
@@ -36,26 +41,54 @@ import {
 
 @Injectable()
 export class PostsService {
+  private readonly postRepository: Repository<Post>;
+  private readonly attachmentRepository: Repository<Attachment>;
+  private readonly likeRepository: Repository<Like>;
+  private readonly commentRepository: Repository<Comment>;
+  private readonly bookmarkRepository: Repository<Bookmark>;
+  private readonly userRepository: Repository<User>;
+  private readonly mediaModerationRepository: Repository<MediaModeration>;
+  private readonly videoRepository: Repository<Video>;
+  private readonly reportRepository: Repository<Report>;
+  private readonly blockRepository: Repository<Block>;
+  private readonly muteRepository: Repository<Mute>;
+
   constructor(
     @InjectRepository(Post)
-    private readonly postRepository: Repository<Post>,
+    postRepository: Repository<Post>,
     @InjectRepository(Attachment)
-    private readonly attachmentRepository: Repository<Attachment>,
+    attachmentRepository: Repository<Attachment>,
     @InjectRepository(Like)
-    private readonly likeRepository: Repository<Like>,
+    likeRepository: Repository<Like>,
     @InjectRepository(Comment)
-    private readonly commentRepository: Repository<Comment>,
+    commentRepository: Repository<Comment>,
     @InjectRepository(Bookmark)
-    private readonly bookmarkRepository: Repository<Bookmark>,
+    bookmarkRepository: Repository<Bookmark>,
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    userRepository: Repository<User>,
     @InjectRepository(MediaModeration)
-    private readonly mediaModerationRepository: Repository<MediaModeration>,
+    mediaModerationRepository: Repository<MediaModeration>,
     @InjectRepository(Video)
-    private readonly videoRepository: Repository<Video>,
+    videoRepository: Repository<Video>,
     @InjectRepository(Report)
-    private readonly reportRepository: Repository<Report>,
-  ) {}
+    reportRepository: Repository<Report>,
+    @InjectRepository(Block)
+    blockRepository: Repository<Block>,
+    @InjectRepository(Mute)
+    muteRepository: Repository<Mute>,
+  ) {
+    this.postRepository = postRepository;
+    this.attachmentRepository = attachmentRepository;
+    this.likeRepository = likeRepository;
+    this.commentRepository = commentRepository;
+    this.bookmarkRepository = bookmarkRepository;
+    this.userRepository = userRepository;
+    this.mediaModerationRepository = mediaModerationRepository;
+    this.videoRepository = videoRepository;
+    this.reportRepository = reportRepository;
+    this.blockRepository = blockRepository;
+    this.muteRepository = muteRepository;
+  }
 
   async reportPost(
     userId: string,
@@ -189,6 +222,8 @@ export class PostsService {
     page: number,
     limit: number,
   ): Promise<PaginatedPostsDto> {
+    const hiddenUserIds = await this.getHiddenUserIds(userId);
+
     const qb = this.postRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.attachments', 'a')
@@ -197,6 +232,10 @@ export class PostsService {
       .where('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.createdAt', 'DESC');
+
+    if (hiddenUserIds.length > 0) {
+      qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
+    }
 
     const [posts, total] = await qb
       .skip((page - 1) * limit)
@@ -218,6 +257,8 @@ export class PostsService {
     page: number,
     limit: number,
   ): Promise<PaginatedPostsDto> {
+    const hiddenUserIds = await this.getHiddenUserIds(userId);
+
     const qb = this.postRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.attachments', 'a')
@@ -226,6 +267,10 @@ export class PostsService {
       .where('p.isHighlight = :isHighlight', { isHighlight: true })
       .andWhere('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.createdAt', 'DESC');
+
+    if (hiddenUserIds.length > 0) {
+      qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
+    }
 
     const [posts, total] = await qb
       .skip((page - 1) * limit)
@@ -247,6 +292,8 @@ export class PostsService {
     page: number,
     limit: number,
   ): Promise<PaginatedPostsDto> {
+    const hiddenUserIds = await this.getHiddenUserIds(userId);
+
     const qb = this.postRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.attachments', 'a')
@@ -256,6 +303,10 @@ export class PostsService {
       .orderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.viewsCount', 'DESC')
       .addOrderBy('p.createdAt', 'DESC');
+
+    if (hiddenUserIds.length > 0) {
+      qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
+    }
 
     const [posts, total] = await qb
       .skip((page - 1) * limit)
@@ -373,9 +424,19 @@ export class PostsService {
     if (!comment) {
       throw new NotFoundException('Comment not found');
     }
+
+    // Allow deletion by comment author OR post owner
     if (comment.userId !== userId) {
-      throw new ForbiddenException('You can only delete your own comments');
+      const post = await this.postRepository.findOne({
+        where: { id: comment.postId },
+      });
+      if (!post || post.userId !== userId) {
+        throw new ForbiddenException(
+          'You can only delete your own comments or comments on your posts',
+        );
+      }
     }
+
     await this.commentRepository.remove(comment);
     await this.postRepository.decrement(
       { id: comment.postId },
@@ -421,7 +482,7 @@ export class PostsService {
     await this.ensurePostVisible(postId, userId);
     await this.postRepository.increment({ id: postId }, 'sharesCount', 1);
     const post = await this.postRepository.findOne({ where: { id: postId } });
-    return { sharesCount: (post?.sharesCount ?? 0) + 1 };
+    return { sharesCount: post?.sharesCount ?? 1 };
   }
 
   async getVideo(id: string, userId?: string): Promise<VideoResponseDto> {
@@ -566,6 +627,28 @@ export class PostsService {
       );
     }
     return post;
+  }
+
+  /**
+   * Returns IDs of users that the given user has blocked or muted.
+   * Used to filter those users' posts out of feeds.
+   */
+  private async getHiddenUserIds(userId: string): Promise<string[]> {
+    const [blocks, mutes] = await Promise.all([
+      this.blockRepository.find({
+        where: { blockerId: userId },
+        select: ['blockedId'],
+      }),
+      this.muteRepository.find({
+        where: { muterId: userId },
+        select: ['mutedId'],
+      }),
+    ]);
+    const ids = new Set([
+      ...blocks.map(b => b.blockedId),
+      ...mutes.map(m => m.mutedId),
+    ]);
+    return [...ids];
   }
 
   private async ensurePostExists(postId: string): Promise<Post> {

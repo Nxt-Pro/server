@@ -1,4 +1,4 @@
-import { Column, Entity, OneToMany, Index } from 'typeorm';
+import { Column, Entity, Index, OneToMany } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Event } from './event.entity';
 
@@ -21,11 +21,11 @@ export class Venue extends BaseEntity {
   @Column({ type: 'int', nullable: true })
   capacity?: number;
 
-  @Column({ type: 'varchar', nullable: true })
-  contact_phone?: string;
+  @Column({ type: 'varchar', nullable: true, name: 'contact_phone' })
+  contactPhone?: string;
 
-  @Column({ type: 'varchar', nullable: true })
-  contact_email?: string;
+  @Column({ type: 'varchar', nullable: true, name: 'contact_email' })
+  contactEmail?: string;
 
   @Column({ type: 'text', array: true, nullable: true })
   images?: string[];

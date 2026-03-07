@@ -9,22 +9,39 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import type { AuthResponseDto } from './dto/auth-response.dto';
+import type { MeResponseDto } from './dto/me-response.dto';
 import type { RegisterDto } from './dto/register.dto';
 import type { TokenResponseDto } from './dto/token-response.dto';
-import type { MeResponseDto } from './dto/me-response.dto';
+
 import type { JwtPayload } from '@/common/interfaces';
-import { User } from '@/database/entities';
+import { PlayerProfile, ScoutProfile, User } from '@/database/entities';
 
 const SALT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
+  private readonly userRepository: Repository<User>;
+  private readonly playerProfileRepository: Repository<PlayerProfile>;
+  private readonly scoutProfileRepository: Repository<ScoutProfile>;
+  private readonly jwtService: JwtService;
+  private readonly configService: ConfigService;
+
   constructor(
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-  ) {}
+    userRepository: Repository<User>,
+    @InjectRepository(PlayerProfile)
+    playerProfileRepository: Repository<PlayerProfile>,
+    @InjectRepository(ScoutProfile)
+    scoutProfileRepository: Repository<ScoutProfile>,
+    jwtService: JwtService,
+    configService: ConfigService,
+  ) {
+    this.userRepository = userRepository;
+    this.playerProfileRepository = playerProfileRepository;
+    this.scoutProfileRepository = scoutProfileRepository;
+    this.jwtService = jwtService;
+    this.configService = configService;
+  }
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
     const existing = await this.userRepository.findOne({
@@ -41,8 +58,29 @@ export class AuthService {
       status: 'active',
     });
     await this.userRepository.save(user);
+
+    const fullName = dto.fullName?.trim() || '';
+
+    // Create the corresponding profile based on role
+    if (dto.role === 'player') {
+      const playerProfile = this.playerProfileRepository.create({
+        userId: user.id,
+        fullName: fullName || user.email,
+        dateOfBirth: new Date('2000-01-01'), // placeholder until profile is updated
+      });
+      await this.playerProfileRepository.save(playerProfile);
+    } else if (dto.role === 'scout') {
+      const scoutProfile = this.scoutProfileRepository.create({
+        userId: user.id,
+        fullName: fullName || user.email,
+        organization: '',
+        organizationType: 'independent',
+      });
+      await this.scoutProfileRepository.save(scoutProfile);
+    }
+
     const tokens = this.issueTokens(user);
-    return this.toAuthResponse(user, tokens, dto.fullName ?? '');
+    return this.toAuthResponse(user, tokens, fullName || user.email);
   }
 
   async login(email: string, password: string): Promise<AuthResponseDto> {
@@ -71,6 +109,7 @@ export class AuthService {
     return this.toAuthResponse(user, tokens, name);
   }
 
+  // eslint-disable-next-line no-unused-vars
   async logout(_userId: string, _refreshToken?: string): Promise<void> {
     // Stateless: client discards tokens. Optional: add in-memory or Redis blocklist later.
   }
