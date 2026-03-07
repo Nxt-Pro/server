@@ -54,6 +54,9 @@ export class ScoutProfile {
   @Column({ nullable: true, name: 'profile_picture_url' })
   profilePictureUrl?: string;
 
+  @Column({ nullable: true, name: 'cover_image_url' })
+  coverImageUrl?: string;
+
   // --- Activity & Verification ---
   @Column({ type: 'int', default: 0, name: 'total_notes' })
   totalNotes: number;

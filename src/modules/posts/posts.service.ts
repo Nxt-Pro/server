@@ -1,0 +1,648 @@
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import type { PostResponseDto } from './dto/post-response.dto';
+import type { CommentResponseDto } from './dto/comment-response.dto';
+import type { CreateCommentDto } from './dto/create-comment.dto';
+import type { CreatePostDto } from './dto/create-post.dto';
+import type { AddAttachmentDto } from './dto/add-attachment.dto';
+import type { CreateAiVideoDto } from './dto/create-ai-video.dto';
+import type { AiVideoResponseDto } from './dto/ai-video-response.dto';
+import type { UpdateVideoDto } from './dto/update-video.dto';
+import type { VideoResponseDto } from './dto/video-response.dto';
+import type { PaginatedPostsDto } from './dto/paginated-posts.dto';
+import type { PaginatedVideosDto } from './dto/paginated-videos.dto';
+import type { PaginatedCommentsDto } from './dto/paginated-comments.dto';
+import type { LikeResponseDto } from './dto/like-response.dto';
+import type { BookmarkResponseDto } from './dto/bookmark-response.dto';
+import type { ShareResponseDto } from './dto/share-response.dto';
+import type { AttachmentResponseDto } from './dto/attachment-response.dto';
+import type { ReportPostDto } from './dto/report-post.dto';
+import {
+  Attachment,
+  Bookmark,
+  Comment,
+  Like,
+  MediaModeration,
+  Post,
+  Report,
+  User,
+  Video,
+} from '@/database/entities';
+
+@Injectable()
+export class PostsService {
+  constructor(
+    @InjectRepository(Post)
+    private readonly postRepository: Repository<Post>,
+    @InjectRepository(Attachment)
+    private readonly attachmentRepository: Repository<Attachment>,
+    @InjectRepository(Like)
+    private readonly likeRepository: Repository<Like>,
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
+    @InjectRepository(Bookmark)
+    private readonly bookmarkRepository: Repository<Bookmark>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(MediaModeration)
+    private readonly mediaModerationRepository: Repository<MediaModeration>,
+    @InjectRepository(Video)
+    private readonly videoRepository: Repository<Video>,
+    @InjectRepository(Report)
+    private readonly reportRepository: Repository<Report>,
+  ) {}
+
+  async reportPost(
+    userId: string,
+    dto: ReportPostDto,
+  ): Promise<{ message: string }> {
+    await this.ensurePostExists(dto.postId);
+    const report = this.reportRepository.create({
+      reporter: { id: userId },
+      type: 'content',
+      title: dto.title,
+      description: dto.description ?? dto.title,
+      reportedType: 'post',
+      reportedId: dto.postId,
+    });
+    await this.reportRepository.save(report);
+    await this.postRepository.update({ id: dto.postId }, { isReported: true });
+    return { message: 'Report submitted' };
+  }
+
+  async createPost(
+    userId: string,
+    dto: CreatePostDto,
+  ): Promise<PostResponseDto> {
+    const post = this.postRepository.create({
+      userId,
+      caption: dto.caption ?? undefined,
+      visibility:
+        (dto.visibility as 'public' | 'connections' | 'private') ?? 'public',
+    });
+    await this.postRepository.save(post);
+    return this.toPostResponse(post);
+  }
+
+  async createAiVideo(
+    userId: string,
+    dto: CreateAiVideoDto,
+  ): Promise<AiVideoResponseDto> {
+    const post = this.postRepository.create({
+      userId,
+      visibility: 'private',
+    });
+    await this.postRepository.save(post);
+
+    const attachment = this.attachmentRepository.create({
+      postId: post.id,
+      contentType: 'video',
+      url: dto.url,
+      position: 0,
+    });
+    await this.attachmentRepository.save(attachment);
+
+    const mediaModeration = this.mediaModerationRepository.create({
+      attachmentId: attachment.id,
+      status: 'queued',
+    });
+    await this.mediaModerationRepository.save(mediaModeration);
+
+    const video = this.videoRepository.create({
+      id: attachment.id,
+      videoDuration: dto.videoDuration ?? 0,
+      videoThumbnailUrl: dto.videoThumbnailUrl ?? undefined,
+    });
+    await this.videoRepository.save(video);
+
+    return {
+      id: video.id,
+      post_id: post.id,
+      url: attachment.url,
+      video_thumbnail_url: video.videoThumbnailUrl ?? null,
+      video_duration: video.videoDuration,
+      title: post.caption ?? '',
+      views_count: post.viewsCount ?? 0,
+      caption: post.caption ?? undefined,
+      visibility: post.visibility,
+      user_id: post.userId,
+      created_at: post.createdAt.toISOString(),
+      updated_at: post.updatedAt.toISOString(),
+    };
+  }
+
+  async addAttachment(
+    postId: string,
+    userId: string,
+    dto: AddAttachmentDto,
+  ): Promise<AttachmentResponseDto> {
+    await this.ensurePostOwned(postId, userId);
+
+    let nextPosition = dto.position;
+    if (nextPosition === undefined) {
+      const result = await this.attachmentRepository
+        .createQueryBuilder('a')
+        .select('MAX(a.position)', 'max')
+        .where('a.postId = :postId', { postId })
+        .getRawOne<{ max: string | null }>();
+      const maxVal = result?.max != null ? Number(result.max) : -1;
+      nextPosition = maxVal + 1;
+    }
+
+    const attachment = this.attachmentRepository.create({
+      postId,
+      contentType: dto.contentType,
+      url: dto.url,
+      position: nextPosition,
+    });
+    await this.attachmentRepository.save(attachment);
+
+    if (dto.contentType === 'video') {
+      const mediaModeration = this.mediaModerationRepository.create({
+        attachmentId: attachment.id,
+        status: 'queued',
+      });
+      await this.mediaModerationRepository.save(mediaModeration);
+
+      const video = this.videoRepository.create({
+        id: attachment.id,
+        videoDuration: dto.videoDuration ?? 0,
+        videoThumbnailUrl: dto.videoThumbnailUrl ?? undefined,
+      });
+      await this.videoRepository.save(video);
+    }
+
+    const saved = await this.attachmentRepository.findOne({
+      where: { id: attachment.id },
+      relations: ['video'],
+    });
+    return this.toAttachmentResponse(saved ?? attachment);
+  }
+
+  async getFypFeed(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPostsDto> {
+    const qb = this.postRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.attachments', 'a')
+      .leftJoinAndSelect('a.video', 'v')
+      .leftJoinAndSelect('p.user', 'u')
+      .where('p.visibility = :visibility', { visibility: 'public' })
+      .orderBy('p.engagementScore', 'DESC')
+      .addOrderBy('p.createdAt', 'DESC');
+
+    const [posts, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const data = posts.map(p => this.toPostResponse(p));
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getHighlightsFeed(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPostsDto> {
+    const qb = this.postRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.attachments', 'a')
+      .leftJoinAndSelect('a.video', 'v')
+      .leftJoinAndSelect('p.user', 'u')
+      .where('p.isHighlight = :isHighlight', { isHighlight: true })
+      .andWhere('p.visibility = :visibility', { visibility: 'public' })
+      .orderBy('p.createdAt', 'DESC');
+
+    const [posts, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const data = posts.map(p => this.toPostResponse(p));
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getTrendingFeed(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPostsDto> {
+    const qb = this.postRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.attachments', 'a')
+      .leftJoinAndSelect('a.video', 'v')
+      .leftJoinAndSelect('p.user', 'u')
+      .where('p.visibility = :visibility', { visibility: 'public' })
+      .orderBy('p.engagementScore', 'DESC')
+      .addOrderBy('p.viewsCount', 'DESC')
+      .addOrderBy('p.createdAt', 'DESC');
+
+    const [posts, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const data = posts.map(p => this.toPostResponse(p));
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async deletePost(postId: string, userId: string): Promise<void> {
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.userId !== userId) {
+      throw new ForbiddenException('You can only delete your own posts');
+    }
+    await this.postRepository.remove(post);
+  }
+
+  async getPost(postId: string, userId: string): Promise<PostResponseDto> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['user', 'attachments', 'attachments.video'],
+    });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.visibility === 'private' && post.userId !== userId) {
+      throw new NotFoundException('Post not found');
+    }
+    await this.postRepository.increment({ id: postId }, 'viewsCount', 1);
+    post.viewsCount += 1;
+    return this.toPostResponse(post);
+  }
+
+  async likePost(postId: string, userId: string): Promise<LikeResponseDto> {
+    await this.ensurePostExists(postId);
+    const existing = await this.likeRepository.findOne({
+      where: { postId, userId },
+    });
+    if (existing) {
+      const post = await this.postRepository.findOne({ where: { id: postId } });
+      return { liked: true, likesCount: post?.likesCount ?? 0 };
+    }
+    await this.likeRepository.save(
+      this.likeRepository.create({ postId, userId }),
+    );
+    await this.postRepository.increment({ id: postId }, 'likesCount', 1);
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    return { liked: true, likesCount: post?.likesCount ?? 0 };
+  }
+
+  async unlikePost(postId: string, userId: string): Promise<LikeResponseDto> {
+    const result = await this.likeRepository.delete({ postId, userId });
+    if (result.affected && result.affected > 0) {
+      await this.postRepository.decrement({ id: postId }, 'likesCount', 1);
+    }
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    return { liked: false, likesCount: post?.likesCount ?? 0 };
+  }
+
+  async getComments(
+    postId: string,
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedCommentsDto> {
+    await this.ensurePostVisible(postId, userId);
+    const [comments, total] = await this.commentRepository.findAndCount({
+      where: { postId },
+      relations: ['user'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    const data = comments.map(c => this.toCommentResponse(c));
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async createComment(
+    postId: string,
+    userId: string,
+    dto: CreateCommentDto,
+  ): Promise<CommentResponseDto> {
+    await this.ensurePostVisible(postId, userId);
+    const comment = this.commentRepository.create({
+      postId,
+      userId,
+      content: dto.content,
+      parentComment: dto.parentCommentId ?? undefined,
+    });
+    await this.commentRepository.save(comment);
+    await this.postRepository.increment({ id: postId }, 'commentsCount', 1);
+    return this.toCommentResponse(comment);
+  }
+
+  async deleteComment(commentId: string, userId: string): Promise<void> {
+    const comment = await this.commentRepository.findOne({
+      where: { id: commentId },
+    });
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+    if (comment.userId !== userId) {
+      throw new ForbiddenException('You can only delete your own comments');
+    }
+    await this.commentRepository.remove(comment);
+    await this.postRepository.decrement(
+      { id: comment.postId },
+      'commentsCount',
+      1,
+    );
+  }
+
+  async bookmarkPost(
+    postId: string,
+    userId: string,
+  ): Promise<BookmarkResponseDto> {
+    await this.ensurePostExists(postId);
+    const existing = await this.bookmarkRepository.findOne({
+      where: { userId, bookmarkableId: postId, bookmarkableType: 'post' },
+    });
+    if (existing) {
+      return { bookmarked: true };
+    }
+    await this.bookmarkRepository.save(
+      this.bookmarkRepository.create({
+        userId,
+        bookmarkableId: postId,
+        bookmarkableType: 'post',
+      }),
+    );
+    return { bookmarked: true };
+  }
+
+  async unbookmarkPost(
+    postId: string,
+    userId: string,
+  ): Promise<BookmarkResponseDto> {
+    await this.bookmarkRepository.delete({
+      userId,
+      bookmarkableId: postId,
+      bookmarkableType: 'post',
+    });
+    return { bookmarked: false };
+  }
+
+  async sharePost(postId: string, userId: string): Promise<ShareResponseDto> {
+    await this.ensurePostVisible(postId, userId);
+    await this.postRepository.increment({ id: postId }, 'sharesCount', 1);
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    return { sharesCount: (post?.sharesCount ?? 0) + 1 };
+  }
+
+  async getVideo(id: string, userId?: string): Promise<VideoResponseDto> {
+    const video = await this.videoRepository.findOne({
+      where: { id },
+      relations: ['attachment', 'attachment.post'],
+    });
+    if (!video?.attachment?.post) {
+      throw new NotFoundException('Video not found');
+    }
+    const post = video.attachment.post;
+    if (userId && post.userId !== userId) {
+      if (post.visibility === 'private') {
+        throw new NotFoundException('Video not found');
+      }
+    }
+    return this.toVideoResponse(video, video.attachment, post);
+  }
+
+  async listVideos(
+    userId: string,
+    page = 1,
+    limit = 20,
+    filterByUser = true,
+  ): Promise<PaginatedVideosDto> {
+    const qb = this.videoRepository
+      .createQueryBuilder('v')
+      .innerJoinAndSelect('v.attachment', 'a')
+      .innerJoinAndSelect('a.post', 'p')
+      .orderBy('p.createdAt', 'DESC');
+
+    if (filterByUser) {
+      qb.andWhere('p.userId = :userId', { userId });
+    }
+
+    const [videos, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const data = videos.map(v =>
+      this.toVideoResponse(v, v.attachment, v.attachment.post),
+    );
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async updateVideo(
+    id: string,
+    userId: string,
+    dto: UpdateVideoDto,
+  ): Promise<VideoResponseDto> {
+    const video = await this.videoRepository.findOne({
+      where: { id },
+      relations: ['attachment', 'attachment.post'],
+    });
+    if (!video?.attachment?.post) {
+      throw new NotFoundException('Video not found');
+    }
+    if (video.attachment.post.userId !== userId) {
+      throw new ForbiddenException('You can only update your own videos');
+    }
+
+    if (dto.url !== undefined) {
+      video.attachment.url = dto.url;
+      await this.attachmentRepository.save(video.attachment);
+    }
+    if (dto.videoDuration !== undefined) {
+      video.videoDuration = dto.videoDuration;
+    }
+    if (dto.videoThumbnailUrl !== undefined) {
+      video.videoThumbnailUrl = dto.videoThumbnailUrl;
+    }
+    await this.videoRepository.save(video);
+
+    if (dto.caption !== undefined || dto.visibility !== undefined) {
+      const post = video.attachment.post;
+      if (dto.caption !== undefined) post.caption = dto.caption;
+      if (dto.visibility !== undefined) post.visibility = dto.visibility;
+      await this.postRepository.save(post);
+    }
+
+    const updated = await this.videoRepository.findOne({
+      where: { id },
+      relations: ['attachment', 'attachment.post'],
+    });
+    return this.toVideoResponse(
+      updated!,
+      updated!.attachment,
+      updated!.attachment.post,
+    );
+  }
+
+  async deleteVideo(id: string, userId: string): Promise<void> {
+    const video = await this.videoRepository.findOne({
+      where: { id },
+      relations: ['attachment', 'attachment.post'],
+    });
+    if (!video?.attachment?.post) {
+      throw new NotFoundException('Video not found');
+    }
+    if (video.attachment.post.userId !== userId) {
+      throw new ForbiddenException('You can only delete your own videos');
+    }
+    await this.postRepository.remove(video.attachment.post);
+  }
+
+  private toVideoResponse(
+    video: Video,
+    attachment: Attachment,
+    post: Post,
+  ): VideoResponseDto {
+    return {
+      id: video.id,
+      post_id: post.id,
+      url: attachment.url,
+      video_thumbnail_url: video.videoThumbnailUrl ?? null,
+      video_duration: video.videoDuration,
+      title: post.caption ?? '',
+      views_count: post.viewsCount ?? 0,
+      caption: post.caption ?? undefined,
+      visibility: post.visibility,
+      user_id: post.userId,
+      created_at: post.createdAt.toISOString(),
+      updated_at: post.updatedAt.toISOString(),
+    };
+  }
+
+  private async ensurePostOwned(postId: string, userId: string): Promise<Post> {
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.userId !== userId) {
+      throw new ForbiddenException(
+        'You can only add attachments to your own posts',
+      );
+    }
+    return post;
+  }
+
+  private async ensurePostExists(postId: string): Promise<Post> {
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    return post;
+  }
+
+  private async ensurePostVisible(
+    postId: string,
+    userId: string,
+  ): Promise<Post> {
+    const post = await this.postRepository.findOne({ where: { id: postId } });
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.visibility === 'private' && post.userId !== userId) {
+      throw new NotFoundException('Post not found');
+    }
+    return post;
+  }
+
+  private toPostResponse(
+    post: Post & { attachments?: (Attachment & { video?: Video })[] },
+  ): PostResponseDto {
+    const attachments = post.attachments
+      ?.slice()
+      .sort((a, b) => a.position - b.position)
+      .map(a => this.toAttachmentResponse(a));
+    return {
+      id: post.id,
+      userId: post.userId,
+      caption: post.caption ?? null,
+      likesCount: post.likesCount,
+      commentsCount: post.commentsCount,
+      viewsCount: post.viewsCount,
+      sharesCount: post.sharesCount,
+      visibility: post.visibility,
+      isHighlight: post.isHighlight,
+      attachments,
+      createdAt: post.createdAt.toISOString(),
+      updatedAt: post.updatedAt.toISOString(),
+    };
+  }
+
+  private toAttachmentResponse(
+    attachment: Attachment & { video?: Video },
+  ): AttachmentResponseDto {
+    return {
+      id: attachment.id,
+      postId: attachment.postId,
+      contentType: attachment.contentType,
+      url: attachment.url,
+      position: attachment.position,
+      videoDuration:
+        attachment.contentType === 'video' && attachment.video
+          ? attachment.video.videoDuration
+          : undefined,
+      videoThumbnailUrl:
+        attachment.contentType === 'video' && attachment.video
+          ? (attachment.video.videoThumbnailUrl ?? null)
+          : undefined,
+    };
+  }
+
+  private toCommentResponse(comment: Comment): CommentResponseDto {
+    return {
+      id: comment.id,
+      postId: comment.postId,
+      userId: comment.userId,
+      content: comment.content,
+      parentCommentId: comment.parentComment ?? undefined,
+      isReported: comment.isReported,
+      createdAt: comment.createdAt.toISOString(),
+      updatedAt: comment.updatedAt.toISOString(),
+    };
+  }
+}

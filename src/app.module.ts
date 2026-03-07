@@ -1,6 +1,6 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
@@ -13,11 +13,16 @@ import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
 import { AiModule } from './integrations/ai/ai.module';
 
+import { JwtAuthGuard } from '@/common/guards';
 import { configuration, ConfigValidatorService } from '@/config';
 import { DatabaseService } from '@/database';
 import { AdminModule } from '@/modules/admin/admin.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { ConnectionsModule } from '@/modules/connections/connections.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { PlayerModule } from '@/modules/player/player.module';
+import { PostsModule } from '@/modules/posts/posts.module';
+import { ProfilesModule } from '@/modules/profiles/profiles.module';
 
 @Module({
   imports: [
@@ -44,6 +49,10 @@ import { PlayerModule } from '@/modules/player/player.module';
     ]),
 
     // Feature modules
+    AuthModule,
+    PostsModule,
+    ProfilesModule,
+    ConnectionsModule,
     HealthModule,
     AiModule,
     AdminModule,
@@ -66,6 +75,12 @@ import { PlayerModule } from '@/modules/player/player.module';
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
+    },
+
+    // Global guard: require JWT unless route has @Public()
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
     },
 
     // Interceptors
