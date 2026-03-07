@@ -2,8 +2,8 @@ import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import {
   HttpExceptionFilter,
@@ -21,6 +21,11 @@ import { EventsModule } from '@/modules/events';
 import { HealthModule } from '@/modules/health';
 import { NotificationsModule } from '@/modules/notifications';
 import { VenuesModule } from '@/modules/venues';
+import { JwtAuthGuard } from '@/common/guards';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { PostsModule } from '@/modules/posts/posts.module';
+import { ProfilesModule } from '@/modules/profiles/profiles.module';
+import { ConnectionsModule } from '@/modules/connections/connections.module';
 
 @Module({
   imports: [
@@ -50,6 +55,10 @@ import { VenuesModule } from '@/modules/venues';
     ]),
 
     // Feature modules
+    AuthModule,
+    PostsModule,
+    ProfilesModule,
+    ConnectionsModule,
     HealthModule,
     ChatModule,
     EventsModule,
@@ -74,6 +83,12 @@ import { VenuesModule } from '@/modules/venues';
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
+    },
+
+    // Global guard: require JWT unless route has @Public()
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
     },
 
     // Interceptors

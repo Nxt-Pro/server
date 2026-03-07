@@ -1,21 +1,32 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-
-interface UserPayload {
-  id: string;
-}
+import type { JwtPayload } from '../interfaces/jwt-payload.interface';
 
 export const CurrentUser = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): UserPayload | undefined => {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-    const request = ctx.switchToHttp().getRequest() as Record<string, unknown>;
-    if (request?.user) {
-      return request.user as UserPayload;
+  (
+    data: keyof JwtPayload | undefined,
+    ctx: ExecutionContext,
+  ): JwtPayload | string | undefined => {
+    const request = ctx.switchToHttp().getRequest<{
+      user?: JwtPayload;
+      headers?: Record<string, unknown>;
+    }>();
+
+    const user = request.user;
+
+    if (data && user) {
+      return user[data];
     }
-    const headers = request?.headers as Record<string, unknown> | undefined;
-    const userId = headers?.['x-user-id'];
+
+    if (user) {
+      return user;
+    }
+
+    const userId = request.headers?.['x-user-id'];
+
     if (typeof userId === 'string' && userId.length > 0) {
-      return { id: userId };
+      return userId;
     }
+
     return undefined;
   },
 );
