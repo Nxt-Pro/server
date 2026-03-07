@@ -1,11 +1,11 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
   Unique,
-  Index,
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { ChatParticipant } from './chat-participant.entity';
@@ -34,10 +34,10 @@ export class Chat extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: ['active', 'archived', 'blocked'],
-    default: 'active',
+    enum: ['pending', 'active', 'archived', 'blocked'],
+    default: 'pending',
   })
-  status: 'active' | 'archived' | 'blocked';
+  status: 'pending' | 'active' | 'archived' | 'blocked';
 
   @Column({ type: 'int', default: 0, name: 'unread_count' })
   unread_count: number;

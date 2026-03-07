@@ -1,0 +1,43 @@
+App:
+  - Home page (hero{front} &
+    featured players{GET: api/player/featured -> AI Scoring(player registers -> AI scores "refresh weekly" -> writes to DB)} &
+    video highlights{GET: api/post/highlights -> ranked automatically based on engagement "no AI"} "Trending/popular section or page (top posts/most watched players/etc.)" &
+    events section for ongoing tournaments/scouts' trials)
+  - Profile page (player/scout){GET: api/(player/scout)/profile} w/ DM{POST: api/chat/start -> (only scouts can start DMing)chat entity | POST: api/chat/:id/message (player messages & scout messages) | GET: api/chat/:id/messages} &
+    connect{POST: api/player/:scout_id/connect -> player tries to initiate connection with a scout} &
+    stats for players{from profile -> likes count, num of posts, etc. &
+    profile completeness indicator "to encourage filling details") &
+    profile settings}
+  - FYP discovery feed w/ posts(text/pic/video){GET: api/post/fyp -> from recommendation system}
+  - Scouts discovery page{GET: api/scout/} & Players discovery page{GET: api/player/} (Get all)
+  - Posts{POST: api/post -> create post} w/ attachments(entity) likes{POST: api/post/like}, comments{POST: api/post/comment}, bookmarking{POST: api/post/bookmark}, sharing{link popup}, connect button (for scouts){POST: api/player/connect}
+  - Advanced filter component (reusable per page) {will be decided during DB design}
+  - Scouts & players can review each other{GET: api/(player/scout)/profile/:id}
+  - Reporting system (inappropriate behavior, fake profiles, scams, spamming, etc.){POST: api/post/report}
+  - Block/mute functionality{POST: api/(player/scout)/(block/mute)}
+  - Notfication system on likes, comments, DMs, connection requests, verification update(gold), & our marketing messages{GET: api/notifications | POST: api/notifications/read}(either manual or using firebase)
+
+Players:
+  - Featured players (top ranked weekly){already handled above}
+  - Verify players (Basic info[green] -> club[blue] -> performance[gold]){automatically will be verified upon reaching a milestone}
+  - Career timeline{POST: api/timeline/edit | GET: api/timeline/} will be an entity
+  - Availability status{in profile}
+  - Performance analytics & scoring{visible in profile page for everyone}
+  - Achievements showcase{will be an entity referenced as an array in the player's profile}
+  - Pill of position{in profile}
+  - Save/favourite players & scouts (can be used in filtering later)
+
+Scouts:
+  - Advanced multi-feature search (position, age, location, skill level, availability, club history, etc.){elasticsearch will be discussed later "can be replaced with search plus filter"}
+  - Verify scouts by contact/identification (probably manual)
+  - Player comparison tool (side-by-side analysis for 2-4 players){GET: api/player/compare -> compare ids in array side by side "for scouts"}
+  - Private scouting notes on players{POST: api/scout/note/:player_id -> in player's profile | GET: api/scout/notes | GET: api/player/notes "for scouts"}
+  - Batch actions (message multiple players at once){POST: api/scout/bulk-message}
+  - Pills of positions they are scouting{what they are currently looking for}
+  - Save/favourite players (can be used in filtering later)
+
+Admin:
+  - For admins {GET: api/admin/reports | POST: api/admin/ban/:id | GET: api/admin/analytics}
+  - Audit log -> tracks reports, bans, etc.
+
+Message queue -> BullMQ vs RabitMQ (can mix both) "research"

@@ -2,6 +2,7 @@ import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import {
@@ -11,18 +12,26 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
-import { JwtAuthGuard } from '@/common/guards';
+import { ConfigValidatorService } from '@/common/validators';
 import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
-import { ConfigValidatorService } from '@/validators';
+import { FirebaseModule } from '@/integrations/firebase/firebase.module';
+import { ChatModule } from '@/modules/chats';
+import { EventsModule } from '@/modules/events';
+import { HealthModule } from '@/modules/health';
+import { NotificationsModule } from '@/modules/notifications';
+import { VenuesModule } from '@/modules/venues';
+import { JwtAuthGuard } from '@/common/guards';
 import { AuthModule } from '@/modules/auth/auth.module';
-import { HealthModule } from '@/modules/health/health.module';
 import { PostsModule } from '@/modules/posts/posts.module';
 import { ProfilesModule } from '@/modules/profiles/profiles.module';
 import { ConnectionsModule } from '@/modules/connections/connections.module';
 
 @Module({
   imports: [
+    // Global Event Emitter
+    EventEmitterModule.forRoot(),
+
     // Configuration (loads all env vars + validates)
     ConfigModule.forRoot({
       isGlobal: true,
@@ -51,6 +60,11 @@ import { ConnectionsModule } from '@/modules/connections/connections.module';
     ProfilesModule,
     ConnectionsModule,
     HealthModule,
+    ChatModule,
+    EventsModule,
+    VenuesModule,
+    NotificationsModule,
+    FirebaseModule,
   ],
   controllers: [AppController],
   providers: [

@@ -11,11 +11,8 @@ const __dirname = path.dirname(__filename);
 
 export default tseslint.config(
   js.configs.recommended,
-
   ...tseslint.configs.recommendedTypeChecked,
-
   prettierRecommended,
-
   {
     files: ['**/*.ts'],
     languageOptions: {
@@ -36,12 +33,23 @@ export default tseslint.config(
       import: importPlugin,
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': 'off',
+
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+
       'import/order': 'warn',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-misused-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
+
       'prettier/prettier': ['error', { endOfLine: 'lf' }],
     },
   },

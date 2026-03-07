@@ -39,6 +39,9 @@ export class User extends BaseEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'last_active' })
   lastActive?: Date;
 
+  @Column('text', { array: true, default: '{}', name: 'fcm_tokens' })
+  fcmTokens: string[];
+
   // --- Relations ---
   @OneToOne(() => PlayerProfile, profile => profile.user, { nullable: true })
   playerProfile?: PlayerProfile;
