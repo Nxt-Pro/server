@@ -2,7 +2,7 @@ import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import {
   HttpExceptionFilter,
@@ -11,10 +11,15 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
+import { JwtAuthGuard } from '@/common/guards';
 import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
 import { ConfigValidatorService } from '@/validators';
+import { AuthModule } from '@/modules/auth/auth.module';
 import { HealthModule } from '@/modules/health/health.module';
+import { PostsModule } from '@/modules/posts/posts.module';
+import { ProfilesModule } from '@/modules/profiles/profiles.module';
+import { ConnectionsModule } from '@/modules/connections/connections.module';
 
 @Module({
   imports: [
@@ -41,6 +46,10 @@ import { HealthModule } from '@/modules/health/health.module';
     ]),
 
     // Feature modules
+    AuthModule,
+    PostsModule,
+    ProfilesModule,
+    ConnectionsModule,
     HealthModule,
   ],
   controllers: [AppController],
@@ -60,6 +69,12 @@ import { HealthModule } from '@/modules/health/health.module';
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
+    },
+
+    // Global guard: require JWT unless route has @Public()
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
     },
 
     // Interceptors

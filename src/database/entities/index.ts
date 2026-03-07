@@ -11,6 +11,7 @@ export * from './like.entity';
 export * from './media-moderation.entity';
 export * from './mute.entity';
 export * from './player-profile.entity';
+export * from './player-connection.entity';
 export * from './player-stats.entity';
 export * from './post.entity';
 export * from './scout-profile.entity';
