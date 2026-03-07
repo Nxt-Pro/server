@@ -1,0 +1,32 @@
+export class PlayerProfileResponseDto {
+  id: string;
+  user_id: string;
+  full_name: string;
+  date_of_birth: string;
+  position: string | null;
+  secondary_positions: string[];
+  height_cm: number | null;
+  weight_kg: number | null;
+  nationality: string | null;
+  city: string | null;
+  country: string | null;
+  bio: string | null;
+  profile_picture_url: string | null;
+  cover_image_url: string | null;
+  is_verified: boolean;
+  basic_verified_at: string | null;
+  club_verified_at: string | null;
+  performance_verified_at: string | null;
+  availability_status: 'available' | 'trialing' | 'contracted' | null;
+  club_name: string | null;
+  preferred_foot: 'left' | 'right' | 'both' | null;
+  ai_score: number;
+  total_posts: number;
+  total_likes: number;
+  total_views: number;
+  is_featured: boolean;
+  featured_until: string | null;
+  profile_completeness: number;
+  created_at: string;
+  updated_at: string;
+}

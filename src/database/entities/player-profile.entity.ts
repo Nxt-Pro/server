@@ -99,6 +99,9 @@ export class PlayerProfile {
   @Column({ nullable: true, name: 'profile_picture_url' })
   profilePictureUrl?: string;
 
+  @Column({ nullable: true, name: 'cover_image_url' })
+  coverImageUrl?: string;
+
   // --- Performance Metrics ---
   @Column({
     type: 'decimal',

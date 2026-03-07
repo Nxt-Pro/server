@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DatabaseService } from './database';
 import { setupServer } from './server';
-import { ConfigValidatorService } from './validators';
+import { ConfigValidatorService } from './config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {

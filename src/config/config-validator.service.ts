@@ -1,5 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as Yup from 'yup';
+import {
+  aiSchema,
+  databaseSchema,
+  environmentSchema,
+  jwtSchema,
+  queueSchema,
+  uploadSchema,
+} from './schemas';
 
 @Injectable()
 export class ConfigValidatorService {
@@ -18,15 +26,19 @@ export class ConfigValidatorService {
     this.errors = [];
 
     const validations = [
-      this.validateEnvironment(),
-      this.validateDatabase(),
-      this.validateJWT(),
+      { name: 'Environment', validate: this.validateEnvironment() },
+      { name: 'Database', validate: this.validateDatabase() },
+      { name: 'JWT', validate: this.validateJWT() },
+      { name: 'Queue', validate: this.validateQueue() },
+      { name: 'AI', validate: this.validateAI() },
+      { name: 'Upload', validate: this.validateUpload() },
+      // { name: 'Cache', validate: this.validateCache() },
     ];
 
-    const results = await Promise.allSettled(validations);
+    const results = await Promise.allSettled(validations.map(v => v.validate));
 
     results.forEach((result, index) => {
-      const type = ['Environment', 'Database', 'JWT'][index];
+      const type = validations[index].name;
       if (result.status === 'rejected') {
         const reason =
           result.reason instanceof Error
@@ -70,58 +82,47 @@ export class ConfigValidatorService {
    * Validates core environment variables
    */
   private async validateEnvironment(): Promise<void> {
-    const schema = Yup.object({
-      NODE_ENV: Yup.string()
-        .required('NODE_ENV is required')
-        .oneOf(['development', 'production', 'test']),
-      PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .required('PORT is required')
-        .min(1024)
-        .max(65535),
-    });
-
-    await this.runSchemaValidation(schema, 'Environment variables');
+    await this.runSchemaValidation(environmentSchema, 'Environment variables');
   }
 
   /**
    * Validates database-related environment variables
    */
   private async validateDatabase(): Promise<void> {
-    const schema = Yup.object({
-      DB_HOST: Yup.string().required('DB_HOST is required'),
-      DB_PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .required('DB_PORT is required'),
-      DB_USERNAME: Yup.string().required('DB_USERNAME is required'),
-      DB_PASSWORD: Yup.string().required('DB_PASSWORD is required'),
-      DB_NAME: Yup.string().required('DB_NAME is required'),
-    });
-
-    await this.runSchemaValidation(schema, 'Database configuration');
+    await this.runSchemaValidation(databaseSchema, 'Database configuration');
   }
 
   /**
    * Validates JWT-related environment variables
    */
   private async validateJWT(): Promise<void> {
-    const schema = Yup.object({
-      JWT_SECRET: Yup.string()
-        .required('JWT_SECRET is required')
-        .min(32)
-        .notOneOf(
-          ['your_jwt_secret', 'secret', 'password'],
-          'JWT_SECRET is too weak',
-        ),
-      JWT_EXPIRES_IN: Yup.string().default('7d'),
-      JWT_REFRESH_SECRET: Yup.string()
-        .required('JWT_REFRESH_SECRET is required')
-        .min(32),
-      JWT_REFRESH_EXPIRES_IN: Yup.string().default('30d'),
-    });
-
-    await this.runSchemaValidation(schema, 'JWT configuration');
+    await this.runSchemaValidation(jwtSchema, 'JWT configuration');
   }
+
+  /**
+   * Validates queue-related environment variables
+   */
+  private async validateQueue(): Promise<void> {
+    await this.runSchemaValidation(queueSchema, 'Queue configuration');
+  }
+
+  /**
+   * Validates AI-related environment variables
+   */
+  private async validateAI(): Promise<void> {
+    await this.runSchemaValidation(aiSchema, 'AI configuration');
+  }
+
+  /**
+   * Validates upload/CDN-related environment variables
+   */
+  private async validateUpload(): Promise<void> {
+    await this.runSchemaValidation(uploadSchema, 'Upload configuration');
+  }
+
+  // private async validateCache(): Promise<void> {
+  //   await this.runSchemaValidation(cacheSchema, 'Cache configuration');
+  // }
 
   /**
    * Runs a Yup schema validation against the current config and logs results
@@ -139,35 +140,15 @@ export class ConfigValidatorService {
   }
 
   /**
-   * Returns the main Yup schema used by NestJS ConfigModule validation
+   * Returns the main Yup schema used by NestJS ConfigModule validation.
+   * Composed from the same individual schemas used by validateAll().
    */
   private getEnvSchema(): Yup.AnyObjectSchema {
-    return Yup.object({
-      NODE_ENV: Yup.string()
-        .oneOf(['development', 'production', 'test'])
-        .default('development'),
-
-      PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .min(1024)
-        .max(65535)
-        .default(3000),
-
-      // Database
-      DB_HOST: Yup.string().required(),
-      DB_PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .default(5432),
-      DB_USERNAME: Yup.string().required(),
-      DB_PASSWORD: Yup.string().required(),
-      DB_NAME: Yup.string().required(),
-
-      // JWT
-      JWT_SECRET: Yup.string().required().min(32),
-      JWT_EXPIRES_IN: Yup.string().default('7d'),
-      JWT_REFRESH_SECRET: Yup.string().required().min(32),
-      JWT_REFRESH_EXPIRES_IN: Yup.string().default('30d'),
-    });
+    return environmentSchema
+      .concat(databaseSchema)
+      .concat(jwtSchema)
+      .concat(aiSchema)
+      .concat(uploadSchema);
   }
 
   /**

@@ -1,0 +1,47 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import {
+  PlayerDiscoveryController,
+  ScoutDiscoveryController,
+  SearchController,
+} from './discovery.controller';
+import { PlayerProfileController } from './player-profile.controller';
+import { ProfileUploadController } from './profile-upload.controller';
+import { ProfilesService } from './profiles.service';
+import { ScoutNotesController } from './scout-notes.controller';
+import { ScoutProfileController } from './scout-profile.controller';
+import { UserController } from './user.controller';
+import {
+  Block,
+  Mute,
+  PlayerProfile,
+  ScoutNotes,
+  ScoutProfile,
+  User,
+} from '@/database/entities';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+      User,
+      PlayerProfile,
+      ScoutProfile,
+      Block,
+      Mute,
+      ScoutNotes,
+    ]),
+  ],
+  controllers: [
+    PlayerProfileController,
+    ScoutProfileController,
+    ScoutNotesController,
+    UserController,
+    ProfileUploadController,
+    PlayerDiscoveryController,
+    ScoutDiscoveryController,
+    SearchController,
+  ],
+  providers: [ProfilesService],
+  exports: [ProfilesService],
+})
+export class ProfilesModule {}

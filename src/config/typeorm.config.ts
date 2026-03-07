@@ -3,19 +3,10 @@ import {
   TypeOrmModuleAsyncOptions,
   TypeOrmModuleOptions,
 } from '@nestjs/typeorm';
-import { DatabaseLogger, SnakeNamingStrategy } from '@/database';
 
-interface DatabaseConfig {
-  type: 'postgres';
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  database: string;
-  poolSize: number;
-  maxQueryExecutionTime: number;
-  ssl: boolean | { rejectUnauthorized: boolean };
-}
+import type { DatabaseConfig } from './database.config';
+
+import { DatabaseLogger, SnakeNamingStrategy } from '@/database';
 
 export const typeOrmConfig: TypeOrmModuleAsyncOptions = {
   imports: [ConfigModule],
@@ -44,6 +35,7 @@ export const typeOrmConfig: TypeOrmModuleAsyncOptions = {
         idleTimeoutMillis: 30000,
       },
 
+      entities: [__dirname + '/../database/entities/**/*{.ts,.js}'],
       migrations: [__dirname + '/../database/migrations/**/*{.ts,.js}'],
 
       autoLoadEntities: true,

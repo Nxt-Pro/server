@@ -1,15 +1,15 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
-  Index,
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { Venue } from './venue.entity';
 import { EventRegistration } from './event-registration.entity';
 import { User } from './user.entity';
+import { Venue } from './venue.entity';
 
 @Entity('events')
 @Index('idx_events_organizer_id', ['organizer'])
@@ -55,8 +55,9 @@ export class Event extends BaseEntity {
   @Column({
     type: 'enum',
     enum: ['scout', 'admin'],
+    name: 'organizer_type',
   })
-  organizer_type: 'scout' | 'admin';
+  organizerType: 'scout' | 'admin';
 
   // Approval workflow
   @ManyToOne(() => User, { nullable: true })
@@ -68,10 +69,10 @@ export class Event extends BaseEntity {
   approvedBy: User;
 
   @Column({ type: 'timestamptz', nullable: true, name: 'approved_at' })
-  approved_at: Date;
+  approvedAt: Date;
 
   @Column({ type: 'text', nullable: true, name: 'rejection_reason' })
-  rejection_reason: string;
+  rejectionReason: string;
 
   @Column({
     type: 'text',

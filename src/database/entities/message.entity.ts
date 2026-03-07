@@ -1,11 +1,11 @@
-import { Column, Entity, JoinColumn, ManyToOne, Index } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Chat } from './chat.entity';
 import { User } from './user.entity';
 
 @Entity('messages')
 @Index('idx_messages_sender_id', ['sender'])
-@Index('idx_messages_read_at', ['read_at'])
+@Index('idx_messages_read_at', ['readAt'])
 @Index('idx_messages_chat_created_at_desc', ['chat', 'createdAt'])
 export class Message extends BaseEntity {
   @ManyToOne(() => Chat, chat => chat.messages)
@@ -25,11 +25,11 @@ export class Message extends BaseEntity {
     default: 'text',
     name: 'message_type',
   })
-  message_type: 'text' | 'image' | 'file' | 'video';
+  messageType: 'text' | 'image' | 'file' | 'video';
 
   @Column({ type: 'text', nullable: true, name: 'attachment_url' })
-  attachment_url: string | null;
+  attachmentUrl: string | null;
 
   @Column({ type: 'timestamptz', nullable: true, name: 'read_at' })
-  read_at: Date | null;
+  readAt: Date | null;
 }

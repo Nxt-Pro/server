@@ -1,8 +1,8 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import {
   HttpExceptionFilter,
@@ -11,10 +11,18 @@ import {
 } from './common/filters';
 import { TransformInterceptor } from './common/interceptors';
 import { DatabaseModule } from './database/database.module';
-import { configuration } from '@/config';
+import { AiModule } from './integrations/ai/ai.module';
+
+import { JwtAuthGuard } from '@/common/guards';
+import { configuration, ConfigValidatorService } from '@/config';
 import { DatabaseService } from '@/database';
-import { ConfigValidatorService } from '@/validators';
+import { AdminModule } from '@/modules/admin/admin.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { ConnectionsModule } from '@/modules/connections/connections.module';
 import { HealthModule } from '@/modules/health/health.module';
+import { PlayerModule } from '@/modules/player/player.module';
+import { PostsModule } from '@/modules/posts/posts.module';
+import { ProfilesModule } from '@/modules/profiles/profiles.module';
 
 @Module({
   imports: [
@@ -41,7 +49,14 @@ import { HealthModule } from '@/modules/health/health.module';
     ]),
 
     // Feature modules
+    AuthModule,
+    PostsModule,
+    ProfilesModule,
+    ConnectionsModule,
     HealthModule,
+    AiModule,
+    AdminModule,
+    PlayerModule,
   ],
   controllers: [AppController],
   providers: [
@@ -60,6 +75,12 @@ import { HealthModule } from '@/modules/health/health.module';
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
+    },
+
+    // Global guard: require JWT unless route has @Public()
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
     },
 
     // Interceptors
