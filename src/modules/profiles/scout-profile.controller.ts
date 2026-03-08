@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { UpdateScoutProfileDto } from './dto';
 import { ProfilesService } from './profiles.service';
-import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
+import { Public } from '@/common/decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
 
 @Controller('scout/profile')
 export class ScoutProfileController {
@@ -12,6 +13,7 @@ export class ScoutProfileController {
     this.profilesService = profilesService;
   }
 
+  @Public()
   @Get(':id')
   getProfile(@Param('id') id: string) {
     return this.profilesService.getScoutProfile(id);

@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { AnalysisType } from '@/common/enums';
 import {
@@ -18,15 +24,15 @@ import { SkillAnalysisProducer, VideoUploadProducer } from '@/queues/producers';
 export class VideoAnalysisService {
   private readonly logger = new Logger(VideoAnalysisService.name);
 
-  private readonly videoUploadProducer: VideoUploadProducer;
-  private readonly skillAnalysisProducer: SkillAnalysisProducer;
+  private readonly videoUploadProducer?: VideoUploadProducer;
+  private readonly skillAnalysisProducer?: SkillAnalysisProducer;
   private readonly videoRepository: VideoRepository;
   private readonly analysisRepository: VideoSkillAnalysisRepository;
   private readonly playerProfileRepository: PlayerProfileRepository;
 
   constructor(
-    videoUploadProducer: VideoUploadProducer,
-    skillAnalysisProducer: SkillAnalysisProducer,
+    @Optional() videoUploadProducer: VideoUploadProducer | undefined,
+    @Optional() skillAnalysisProducer: SkillAnalysisProducer | undefined,
     videoRepository: VideoRepository,
     analysisRepository: VideoSkillAnalysisRepository,
     playerProfileRepository: PlayerProfileRepository,
@@ -42,6 +48,7 @@ export class VideoAnalysisService {
    * Queue video upload for processing
    */
   async queueVideoUpload(payload: VideoUploadJobPayload) {
+    this.ensureQueueAvailable();
     this.logger.log(`Queueing video upload for user ${payload.userId}`);
 
     const video = await this.videoRepository.findById(payload.videoId);
@@ -50,7 +57,7 @@ export class VideoAnalysisService {
     }
 
     // Queue the upload job
-    const result = await this.videoUploadProducer.queueVideoUpload(payload);
+    const result = await this.videoUploadProducer!.queueVideoUpload(payload);
 
     return {
       jobId: result.jobId,
@@ -65,6 +72,7 @@ export class VideoAnalysisService {
   async queueSkillAnalysis(
     payload: Omit<SkillAnalysisJobPayload, 'playerId' | 'videoUrl'>,
   ) {
+    this.ensureQueueAvailable();
     this.logger.log(`Queueing skill analysis for video ${payload.videoId}`);
 
     const video = await this.videoRepository.findOne({
@@ -116,7 +124,7 @@ export class VideoAnalysisService {
     );
 
     // Queue the analysis job
-    const result = await this.skillAnalysisProducer.queueSkillAnalysis({
+    const result = await this.skillAnalysisProducer!.queueSkillAnalysis({
       ...payload,
       playerId,
       videoUrl,
@@ -135,7 +143,8 @@ export class VideoAnalysisService {
    * returned from queueVideoUpload and pass it here, or retrieve it from the video entity
    */
   async getUploadStatus(jobId: string, userId: string) {
-    const status = await this.videoUploadProducer.getJobStatus(jobId, userId);
+    this.ensureQueueAvailable();
+    const status = await this.videoUploadProducer!.getJobStatus(jobId, userId);
 
     if (!status) {
       throw new NotFoundException(`Upload job ${jobId} not found`);
@@ -156,7 +165,11 @@ export class VideoAnalysisService {
    * returned from queueSkillAnalysis and pass it here
    */
   async getAnalysisStatus(jobId: string, userId: string) {
-    const status = await this.skillAnalysisProducer.getJobStatus(jobId, userId);
+    this.ensureQueueAvailable();
+    const status = await this.skillAnalysisProducer!.getJobStatus(
+      jobId,
+      userId,
+    );
 
     if (!status) {
       throw new NotFoundException(`Analysis job ${jobId} not found`);
@@ -175,17 +188,19 @@ export class VideoAnalysisService {
    * Get all active jobs for a user
    */
   async getUserActiveJobs(userId: string): Promise<JobProgress[]> {
-    return await this.skillAnalysisProducer.getUserActiveJobs(userId);
+    this.ensureQueueAvailable();
+    return await this.skillAnalysisProducer!.getUserActiveJobs(userId);
   }
 
   /**
    * Cancel a job
    */
   async cancelJob(jobId: string, userId: string): Promise<boolean> {
-    let cancelled = await this.videoUploadProducer.cancelJob(jobId, userId);
+    this.ensureQueueAvailable();
+    let cancelled = await this.videoUploadProducer!.cancelJob(jobId, userId);
 
     if (!cancelled) {
-      cancelled = await this.skillAnalysisProducer.cancelJob(jobId, userId);
+      cancelled = await this.skillAnalysisProducer!.cancelJob(jobId, userId);
     }
 
     if (!cancelled) {
@@ -253,6 +268,7 @@ export class VideoAnalysisService {
     playerId: string,
     analysisType?: AnalysisType,
   ): Promise<{ jobIds: string[]; message: string }> {
+    this.ensureQueueAvailable();
     this.logger.log(`Recalculating AI score for player ${playerId}`);
 
     const player = await this.playerProfileRepository.findByUserId(playerId);
@@ -308,7 +324,7 @@ export class VideoAnalysisService {
     }
 
     const result =
-      await this.skillAnalysisProducer.queueBatchAnalysis(payloads);
+      await this.skillAnalysisProducer!.queueBatchAnalysis(payloads);
 
     this.logger.log(
       `Queued ${result.jobIds.length} recalculation jobs for player ${playerId}`,
@@ -318,5 +334,13 @@ export class VideoAnalysisService {
       jobIds: result.jobIds,
       message: `Queued ${result.jobIds.length} video(s) for re-analysis`,
     };
+  }
+
+  private ensureQueueAvailable() {
+    if (!this.videoUploadProducer || !this.skillAnalysisProducer) {
+      throw new ServiceUnavailableException(
+        'Queue service is unavailable. Start Redis and enable queue workers to use AI queue operations.',
+      );
+    }
   }
 }

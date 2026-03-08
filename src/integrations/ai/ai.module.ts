@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AiController } from './ai.controller';
@@ -11,10 +11,10 @@ import { VideoAnalysisService } from './video-analysis.service';
 
 import { AiConfig } from '@/config';
 import { RepositoriesModule } from '@/database/repositories.module';
-import { QueuesModule } from '@/queues/queues.module';
 
 @Module({
-  imports: [RepositoriesModule, forwardRef(() => QueuesModule), ConfigModule],
+  // Keep AI read/query capabilities available even when Redis/queues are not running.
+  imports: [RepositoriesModule, ConfigModule],
   controllers: [AiController],
   providers: [
     VideoAnalysisService,

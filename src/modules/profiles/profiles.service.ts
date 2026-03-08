@@ -658,6 +658,7 @@ export class ProfilesService {
     profile: ScoutProfile,
   ): ScoutProfileResponseDto {
     return {
+      id: profile.userId,
       user_id: profile.userId,
       full_name: profile.fullName,
       organization: profile.organization,
