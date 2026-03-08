@@ -1,4 +1,4 @@
-import { IsUlid } from '@/validators';
+import { IsUlid } from '@/common/validators';
 
 export class UlidParamDto {
   @IsUlid()

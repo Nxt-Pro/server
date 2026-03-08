@@ -1,7 +1,7 @@
 import { IsEnum, IsOptional } from 'class-validator';
 
 import { AnalysisType } from '@/common/enums';
-import { IsUlid } from '@/validators';
+import { IsUlid } from '@/common/validators';
 
 export class RecalculatePlayerDto {
   @IsUlid()

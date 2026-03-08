@@ -1,6 +1,6 @@
 import { IsNumber, IsString, Min } from 'class-validator';
 
-import { IsUlid } from '@/validators';
+import { IsUlid } from '@/common/validators';
 
 export class VideoUploadDto {
   @IsUlid()

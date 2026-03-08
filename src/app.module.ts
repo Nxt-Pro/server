@@ -1,6 +1,7 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
@@ -14,18 +15,27 @@ import { DatabaseModule } from './database/database.module';
 import { AiModule } from './integrations/ai/ai.module';
 
 import { JwtAuthGuard } from '@/common/guards';
-import { configuration, ConfigValidatorService } from '@/config';
+import { ConfigValidatorService } from '@/common/validators';
+import { configuration } from '@/config';
 import { DatabaseService } from '@/database';
+import { FirebaseModule } from '@/integrations/firebase/firebase.module';
 import { AdminModule } from '@/modules/admin/admin.module';
 import { AuthModule } from '@/modules/auth/auth.module';
+import { ChatModule } from '@/modules/chats';
 import { ConnectionsModule } from '@/modules/connections/connections.module';
-import { HealthModule } from '@/modules/health/health.module';
+import { EventsModule } from '@/modules/events';
+import { HealthModule } from '@/modules/health';
+import { NotificationsModule } from '@/modules/notifications';
 import { PlayerModule } from '@/modules/player/player.module';
 import { PostsModule } from '@/modules/posts/posts.module';
 import { ProfilesModule } from '@/modules/profiles/profiles.module';
+import { VenuesModule } from '@/modules/venues';
 
 @Module({
   imports: [
+    // Global Event Emitter
+    EventEmitterModule.forRoot(),
+
     // Configuration (loads all env vars + validates)
     ConfigModule.forRoot({
       isGlobal: true,
@@ -57,6 +67,11 @@ import { ProfilesModule } from '@/modules/profiles/profiles.module';
     AiModule,
     AdminModule,
     PlayerModule,
+    ChatModule,
+    EventsModule,
+    VenuesModule,
+    NotificationsModule,
+    FirebaseModule,
   ],
   controllers: [AppController],
   providers: [
