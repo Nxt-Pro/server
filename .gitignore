@@ -49,6 +49,9 @@ coverage/
 .temp/
 .tmp/
 
+# documentation
+docs/
+
 # runtime data
 pids/
 *.pid
