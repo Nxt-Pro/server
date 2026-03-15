@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import { AnalysisType, GoalkeeperSkill, OutfieldSkill } from '@/common/enums';
 import type { ModerationAnalysis } from '@/common/types';
 

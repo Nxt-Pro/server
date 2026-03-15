@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 /** Minimal job shape used by consumers and event handlers */
 export interface BullJob<TData = unknown> {
   id?: string;

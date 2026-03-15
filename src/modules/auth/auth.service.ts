@@ -1,4 +1,6 @@
+import * as crypto from 'crypto';
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -7,14 +9,19 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
+import speakeasy from 'speakeasy';
+import QRCode from 'qrcode';
 import { Repository } from 'typeorm';
 import type { AuthResponseDto } from './dto/auth-response.dto';
 import type { MeResponseDto } from './dto/me-response.dto';
+import type { OAuthLoginDto } from './dto/oauth-login.dto';
+import type { TwoFaSetupResponseDto } from './dto/two-fa-setup-response.dto';
 import type { RegisterDto } from './dto/register.dto';
 import type { TokenResponseDto } from './dto/token-response.dto';
 
 import type { JwtPayload } from '@/common/interfaces';
 import { PlayerProfile, ScoutProfile, User } from '@/database/entities';
+import { MailService } from '@/integrations/mail/mail.service';
 
 const SALT_ROUNDS = 10;
 
@@ -25,6 +32,7 @@ export class AuthService {
   private readonly scoutProfileRepository: Repository<ScoutProfile>;
   private readonly jwtService: JwtService;
   private readonly configService: ConfigService;
+  private readonly mailService: MailService;
 
   constructor(
     @InjectRepository(User)
@@ -35,12 +43,14 @@ export class AuthService {
     scoutProfileRepository: Repository<ScoutProfile>,
     jwtService: JwtService,
     configService: ConfigService,
+    mailService: MailService,
   ) {
     this.userRepository = userRepository;
     this.playerProfileRepository = playerProfileRepository;
     this.scoutProfileRepository = scoutProfileRepository;
     this.jwtService = jwtService;
     this.configService = configService;
+    this.mailService = mailService;
   }
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -86,7 +96,14 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthResponseDto> {
     const user = await this.userRepository.findOne({
       where: { email: email.toLowerCase() },
-      select: ['id', 'email', 'passwordHash', 'role', 'status'],
+      select: [
+        'id',
+        'email',
+        'passwordHash',
+        'role',
+        'status',
+        'twoFactorEnabled',
+      ],
       relations: ['playerProfile', 'scoutProfile'],
     });
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
@@ -105,11 +122,28 @@ export class AuthService {
       (user as { scoutProfile?: { fullName?: string } }).scoutProfile
         ?.fullName ??
       '';
+    // If 2FA is enabled, do not issue access/refresh tokens yet.
+    // Instead, generate a short-lived 2FA token and require a TOTP code.
+    if (user.twoFactorEnabled) {
+      const twoFactorToken = this.issueTwoFactorToken(user);
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          name: name || user.email,
+        },
+        token: '',
+        twoFactorRequired: true,
+        twoFactorToken,
+      };
+    }
+
     const tokens = this.issueTokens(user);
     return this.toAuthResponse(user, tokens, name);
   }
 
-  // eslint-disable-next-line no-unused-vars
   async logout(_userId: string, _refreshToken?: string): Promise<void> {
     // Stateless: client discards tokens. Optional: add in-memory or Redis blocklist later.
   }
@@ -199,6 +233,323 @@ export class AuthService {
     await this.userRepository.save(user);
   }
 
+  async requestPasswordReset(email: string): Promise<void> {
+    const normalizedEmail = email.toLowerCase();
+    const user = await this.userRepository.findOne({
+      where: { email: normalizedEmail },
+      select: ['id', 'email', 'passwordResetToken', 'passwordResetExpiresAt'],
+    });
+
+    // Do not reveal whether the email exists
+    if (!user) {
+      return;
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await this.userRepository.save(user);
+
+    const frontendBaseUrl =
+      this.configService.get<string>('app.frontendBaseUrl') ??
+      this.configService.get<string>('frontend.baseUrl') ??
+      'https://app.nxtpro.app';
+
+    const resetUrl = `${frontendBaseUrl.replace(/\/+$/, '')}/reset-password?token=${rawToken}&email=${encodeURIComponent(
+      normalizedEmail,
+    )}`;
+
+    await this.mailService.sendPasswordResetEmail(normalizedEmail, resetUrl);
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await this.userRepository.findOne({
+      where: { passwordResetToken: hashedToken },
+      select: [
+        'id',
+        'passwordHash',
+        'passwordResetToken',
+        'passwordResetExpiresAt',
+      ],
+    });
+
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('Reset token is invalid or has expired');
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    user.passwordResetToken = null;
+    user.passwordResetExpiresAt = null;
+
+    await this.userRepository.save(user);
+  }
+
+  async setTwoFactorEnabled(userId: string, enabled: boolean): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: [
+        'id',
+        'twoFactorEnabled',
+        'twoFactorCode',
+        'twoFactorCodeExpiresAt',
+      ],
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    user.twoFactorEnabled = enabled;
+
+    if (!enabled) {
+      user.twoFactorCode = null;
+      user.twoFactorCodeExpiresAt = null;
+      user.twoFactorSecret = null;
+    }
+
+    await this.userRepository.save(user);
+  }
+
+  async startTwoFactorSetup(userId: string): Promise<TwoFaSetupResponseDto> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'twoFactorSecret'],
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const generatedSecret = (
+      speakeasy as unknown as {
+        generateSecret: (options: unknown) => { base32: string };
+      }
+    ).generateSecret({
+      length: 32,
+      name: `NxtPro (${user.email})`,
+    });
+
+    const secret = user.twoFactorSecret ?? generatedSecret.base32;
+
+    user.twoFactorSecret = secret;
+    await this.userRepository.save(user);
+
+    const otpauthUrl = (
+      speakeasy as unknown as {
+        otpauthURL: (options: unknown) => string;
+      }
+    ).otpauthURL({
+      secret,
+      label: `NxtPro (${user.email})`,
+      encoding: 'base32',
+      issuer: 'NxtPro',
+    });
+
+    const qrCodeDataUrl = await (
+      QRCode as unknown as {
+        toDataURL: (text: string) => Promise<string>;
+      }
+    ).toDataURL(otpauthUrl);
+
+    return {
+      secret,
+      otpauthUrl,
+      qrCodeDataUrl,
+    };
+  }
+
+  async confirmTwoFactorSetup(userId: string, code: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'twoFactorSecret', 'twoFactorEnabled'],
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!user.twoFactorSecret) {
+      throw new BadRequestException('Two-factor secret not initialized');
+    }
+
+    const verified = (
+      speakeasy as unknown as {
+        totp: { verify: (options: unknown) => boolean };
+      }
+    ).totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: code,
+      window: 1,
+    });
+
+    if (!verified) {
+      throw new UnauthorizedException('Invalid verification code');
+    }
+
+    user.twoFactorEnabled = true;
+    await this.userRepository.save(user);
+  }
+
+  async verifyTwoFactor(
+    twoFactorToken: string,
+    code: string,
+  ): Promise<AuthResponseDto> {
+    const secret = this.configService.get<string>('jwt.secret');
+    if (!secret) {
+      throw new Error('JWT secret not configured');
+    }
+
+    let payload: JwtPayload & { type?: string };
+    try {
+      payload = this.jwtService.verify<JwtPayload & { type?: string }>(
+        twoFactorToken,
+        {
+          secret,
+        },
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid or expired two-factor token');
+    }
+
+    if (payload.type !== '2fa') {
+      throw new UnauthorizedException('Invalid two-factor token');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
+      select: [
+        'id',
+        'email',
+        'role',
+        'status',
+        'twoFactorEnabled',
+        'twoFactorSecret',
+      ],
+      relations: ['playerProfile', 'scoutProfile'],
+    });
+
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+      throw new UnauthorizedException('User not found or 2FA not enabled');
+    }
+
+    const verified = (
+      speakeasy as unknown as {
+        totp: { verify: (options: unknown) => boolean };
+      }
+    ).totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: code,
+      window: 1,
+    });
+
+    if (!verified) {
+      throw new UnauthorizedException('Invalid verification code');
+    }
+
+    await this.userRepository.save(user);
+
+    const name =
+      (
+        user as {
+          playerProfile?: { fullName?: string };
+          scoutProfile?: { fullName?: string };
+        }
+      ).playerProfile?.fullName ??
+      (user as { scoutProfile?: { fullName?: string } }).scoutProfile
+        ?.fullName ??
+      '';
+
+    const tokens = this.issueTokens(user);
+    return this.toAuthResponse(user, tokens, name || user.email);
+  }
+
+  async oauthLogin(dto: OAuthLoginDto): Promise<AuthResponseDto> {
+    const provider = dto.provider.toLowerCase();
+
+    let user = await this.userRepository.findOne({
+      where: {
+        oauthProvider: provider,
+        oauthProviderId: dto.providerUserId,
+      },
+      relations: ['playerProfile', 'scoutProfile'],
+    });
+
+    if (!user && dto.email) {
+      user = await this.userRepository.findOne({
+        where: { email: dto.email.toLowerCase() },
+        relations: ['playerProfile', 'scoutProfile'],
+      });
+    }
+
+    const normalizedEmail =
+      dto.email?.toLowerCase() ??
+      `${dto.providerUserId}@${provider}.oauth.local`;
+
+    if (!user) {
+      const passwordHash = await bcrypt.hash(
+        crypto.randomBytes(16).toString('hex'),
+        SALT_ROUNDS,
+      );
+
+      user = this.userRepository.create({
+        email: normalizedEmail,
+        passwordHash,
+        role: 'player',
+        status: 'active',
+        oauthProvider: provider,
+        oauthProviderId: dto.providerUserId,
+      });
+
+      await this.userRepository.save(user);
+
+      const fullName = dto.name?.trim() || normalizedEmail;
+      const playerProfile = this.playerProfileRepository.create({
+        userId: user.id,
+        fullName,
+        dateOfBirth: new Date('2000-01-01'),
+      });
+      await this.playerProfileRepository.save(playerProfile);
+    } else {
+      if (user.status !== 'active') {
+        throw new UnauthorizedException('Account is not active');
+      }
+
+      if (!user.oauthProvider || !user.oauthProviderId) {
+        user.oauthProvider = provider;
+        user.oauthProviderId = dto.providerUserId;
+        await this.userRepository.save(user);
+      }
+    }
+
+    const name =
+      (dto.name?.trim() ||
+        (
+          user as {
+            playerProfile?: { fullName?: string };
+            scoutProfile?: { fullName?: string };
+          }
+        ).playerProfile?.fullName) ??
+      (user as { scoutProfile?: { fullName?: string } }).scoutProfile
+        ?.fullName ??
+      '';
+
+    const tokens = this.issueTokens(user);
+    return this.toAuthResponse(user, tokens, name || user.email);
+  }
+
   private issueTokens(
     user: Pick<User, 'id' | 'email' | 'role'>,
   ): TokenResponseDto {
@@ -242,6 +593,34 @@ export class AuthService {
     };
   }
 
+  private issueTwoFactorToken(
+    user: Pick<User, 'id' | 'email' | 'role'>,
+  ): string {
+    const secret = this.configService.get<string>('jwt.secret');
+    if (!secret) {
+      throw new Error('JWT secret not configured');
+    }
+
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      type: '2fa',
+    };
+
+    const twoFactorExpiresIn = this.configService.get<string>(
+      'jwt.twoFactorExpiresIn',
+      '10m',
+    );
+
+    const expiresInSeconds = this.parseExpiryToSeconds(twoFactorExpiresIn);
+
+    return this.jwtService.sign({ ...payload } as object, {
+      secret,
+      expiresIn: expiresInSeconds,
+    });
+  }
+
   private toAuthResponse(
     user: Pick<User, 'id' | 'email' | 'role'>,
     tokens: TokenResponseDto,
@@ -258,6 +637,11 @@ export class AuthService {
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     };
+  }
+
+  private generateTwoFactorCode(): string {
+    const code = Math.floor(100000 + Math.random() * 900000);
+    return String(code);
   }
 
   private parseExpiryToSeconds(expiresIn: string): number {

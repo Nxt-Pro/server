@@ -1,6 +1,17 @@
 import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, LoginDto, RefreshDto, RegisterDto } from './dto';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  LoginDto,
+  OAuthLoginDto,
+  RefreshDto,
+  RegisterDto,
+  ResetPasswordDto,
+  TwoFaEnableDto,
+  TwoFaVerifyDto,
+  TwoFaSetupResponseDto,
+} from './dto';
 
 import { CurrentUser, Public } from '@/common/decorators';
 import type { JwtPayload } from '@/common/interfaces';
@@ -56,5 +67,58 @@ export class AuthController {
       dto.newPassword,
     );
     return { message: 'Password updated' };
+  }
+
+  @Public()
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.authService.requestPasswordReset(dto.email);
+    return { message: 'If that email exists, a reset link has been sent' };
+  }
+
+  @Public()
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto.token, dto.newPassword);
+    return { message: 'Password has been reset successfully' };
+  }
+
+  @Patch('2fa')
+  async updateTwoFactor(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: TwoFaEnableDto,
+  ) {
+    await this.authService.setTwoFactorEnabled(userId, dto.enabled);
+    return {
+      message: `Two-factor authentication ${dto.enabled ? 'enabled' : 'disabled'}`,
+    };
+  }
+
+  @Patch('2fa/setup')
+  async startTwoFactorSetup(
+    @CurrentUser('sub') userId: string,
+  ): Promise<TwoFaSetupResponseDto> {
+    return this.authService.startTwoFactorSetup(userId);
+  }
+
+  @Patch('2fa/confirm')
+  async confirmTwoFactorSetup(
+    @CurrentUser('sub') userId: string,
+    @Body('code') code: string,
+  ) {
+    await this.authService.confirmTwoFactorSetup(userId, code);
+    return { message: 'Two-factor authentication has been enabled' };
+  }
+
+  @Public()
+  @Post('2fa/verify')
+  async verifyTwoFactor(@Body() dto: TwoFaVerifyDto) {
+    return this.authService.verifyTwoFactor(dto.twoFactorToken, dto.code);
+  }
+
+  @Public()
+  @Post('oauth')
+  async oauthLogin(@Body() dto: OAuthLoginDto) {
+    return this.authService.oauthLogin(dto);
   }
 }

@@ -8,4 +8,6 @@ export class AuthResponseDto {
   token: string;
   refreshToken?: string;
   expiresIn?: number;
+  twoFactorRequired?: boolean;
+  twoFactorToken?: string;
 }

@@ -7,11 +7,13 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PlayerProfile, ScoutProfile, User } from '@/database/entities';
+import { MailModule } from '@/integrations/mail/mail.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, PlayerProfile, ScoutProfile]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    MailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

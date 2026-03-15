@@ -191,6 +191,6 @@ export abstract class BaseSkillAnalysisProcessor<
   /**
    * Calculate overall score using skill-specific weights
    */
-  // eslint-disable-next-line no-unused-vars
+
   protected abstract calculateOverallScore(scores: TScores): number;
 }

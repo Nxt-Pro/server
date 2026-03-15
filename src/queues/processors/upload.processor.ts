@@ -125,7 +125,7 @@ export class UploadProcessor {
    * Extract video metadata
    * TODO: Implement real metadata extraction using ffprobe or a similar tool
    */
-  // eslint-disable-next-line no-unused-vars
+
   private extractVideoMetadata(_payload: VideoUploadJobPayload): {
     duration: number;
     width: number;

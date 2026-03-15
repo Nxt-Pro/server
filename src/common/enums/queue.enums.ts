@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 export enum QueueName {
   VIDEO_UPLOAD = 'video-upload',
   SKILL_ANALYSIS = 'skill-analysis',

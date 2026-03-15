@@ -42,6 +42,75 @@ export class User extends BaseEntity {
   @Column('text', { array: true, default: '{}', name: 'fcm_tokens' })
   fcmTokens: string[];
 
+  // --- Password Reset ---
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    name: 'password_reset_token',
+    select: false,
+  })
+  passwordResetToken?: string | null;
+
+  @Column({
+    type: 'timestamptz',
+    nullable: true,
+    name: 'password_reset_expires_at',
+    select: false,
+  })
+  passwordResetExpiresAt?: Date | null;
+
+  // --- Two-Factor Authentication (email code based) ---
+  @Column({
+    type: 'boolean',
+    name: 'two_factor_enabled',
+    default: false,
+  })
+  twoFactorEnabled: boolean;
+
+  @Column({
+    type: 'varchar',
+    length: 10,
+    nullable: true,
+    name: 'two_factor_code',
+    select: false,
+  })
+  twoFactorCode?: string | null;
+
+  @Column({
+    type: 'timestamptz',
+    nullable: true,
+    name: 'two_factor_code_expires_at',
+    select: false,
+  })
+  twoFactorCodeExpiresAt?: Date | null;
+
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    name: 'two_factor_secret',
+    select: false,
+  })
+  twoFactorSecret?: string | null;
+
+  // --- OAuth / Social Login ---
+  @Column({
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+    name: 'oauth_provider',
+  })
+  oauthProvider?: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    name: 'oauth_provider_id',
+  })
+  oauthProviderId?: string | null;
+
   // --- Relations ---
   @OneToOne(() => PlayerProfile, profile => profile.user, { nullable: true })
   playerProfile?: PlayerProfile;
