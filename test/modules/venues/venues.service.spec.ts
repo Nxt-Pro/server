@@ -16,8 +16,8 @@ const createVenueQueryBuilderMock = (): VenueQueryBuilderMock => {
   const qb: Partial<VenueQueryBuilderMock> = {};
   qb.andWhere = jest.fn(() => qb as VenueQueryBuilderMock);
   qb.orderBy = jest.fn(() => qb as VenueQueryBuilderMock);
-  qb.skip = jest.fn(() => qb as VenueQueryBuilderMock);
-  qb.take = jest.fn(() => qb as VenueQueryBuilderMock);
+  qb.skip = jest.fn((_skip: number) => qb as VenueQueryBuilderMock);
+  qb.take = jest.fn((_take: number) => qb as VenueQueryBuilderMock);
   qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
   return qb as VenueQueryBuilderMock;
 };

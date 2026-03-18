@@ -1,11 +1,16 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { type Transporter } from 'nodemailer';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+
   private readonly transporter: Transporter | null;
   private readonly fromAddress: string;
 
@@ -30,7 +35,6 @@ export class MailService {
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.transporter = (
       nodemailer as unknown as {
         createTransport: (options: unknown) => Transporter;
@@ -53,15 +57,16 @@ export class MailService {
     html?: string;
   }): Promise<void> {
     if (!this.transporter) {
-      this.logger.warn(
-        `MailService disabled. Would send mail to ${options.to} with subject "${options.subject}".`,
+      this.logger.error(
+        `MailService disabled. Cannot send mail to ${options.to} with subject "${options.subject}".`,
       );
-      return;
+      throw new ServiceUnavailableException(
+        'Email service is not configured. Please contact support.',
+      );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const transporter = this.transporter as Transporter;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    const transporter = this.transporter;
+
     await transporter.sendMail({
       from: this.fromAddress,
       to: options.to,

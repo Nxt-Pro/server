@@ -73,7 +73,7 @@ export class AuthController {
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     await this.authService.requestPasswordReset(dto.email);
-    return { message: 'If that email exists, a reset link has been sent' };
+    return { message: 'Reset link has been sent to your email' };
   }
 
   @Public()

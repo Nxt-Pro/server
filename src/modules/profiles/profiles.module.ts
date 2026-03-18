@@ -19,9 +19,11 @@ import {
   ScoutProfile,
   User,
 } from '@/database/entities';
+import { RepositoriesModule } from '@/database/repositories.module';
 
 @Module({
   imports: [
+    RepositoriesModule,
     TypeOrmModule.forFeature([
       User,
       PlayerProfile,

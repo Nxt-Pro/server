@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import { Repository } from 'typeorm';
+import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import type { AuthResponseDto } from './dto/auth-response.dto';
 import type { MeResponseDto } from './dto/me-response.dto';
 import type { OAuthLoginDto } from './dto/oauth-login.dto';
@@ -240,9 +241,8 @@ export class AuthService {
       select: ['id', 'email', 'passwordResetToken', 'passwordResetExpiresAt'],
     });
 
-    // Do not reveal whether the email exists
     if (!user) {
-      return;
+      throw new BadRequestException('Email is not registered');
     }
 
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -479,24 +479,46 @@ export class AuthService {
   async oauthLogin(dto: OAuthLoginDto): Promise<AuthResponseDto> {
     const provider = dto.provider.toLowerCase();
 
+    let providerUserId = dto.providerUserId;
+    let normalizedEmailFromProvider = dto.email?.toLowerCase();
+    let normalizedNameFromProvider = dto.name?.trim();
+
+    if (provider === 'google') {
+      const googleIdentity = await this.verifyGoogleIdentity(dto);
+      providerUserId = googleIdentity.providerUserId;
+      normalizedEmailFromProvider = googleIdentity.email;
+      normalizedNameFromProvider = googleIdentity.name;
+    }
+
+    if (provider === 'facebook') {
+      const facebookIdentity = await this.verifyFacebookIdentity(dto);
+      providerUserId = facebookIdentity.providerUserId;
+      normalizedEmailFromProvider = facebookIdentity.email;
+      normalizedNameFromProvider = facebookIdentity.name;
+    }
+
+    if (!providerUserId) {
+      throw new BadRequestException('OAuth provider user ID is required');
+    }
+
     let user = await this.userRepository.findOne({
       where: {
         oauthProvider: provider,
-        oauthProviderId: dto.providerUserId,
+        oauthProviderId: providerUserId,
       },
       relations: ['playerProfile', 'scoutProfile'],
     });
 
-    if (!user && dto.email) {
+    if (!user && normalizedEmailFromProvider) {
       user = await this.userRepository.findOne({
-        where: { email: dto.email.toLowerCase() },
+        where: { email: normalizedEmailFromProvider },
         relations: ['playerProfile', 'scoutProfile'],
       });
     }
 
     const normalizedEmail =
-      dto.email?.toLowerCase() ??
-      `${dto.providerUserId}@${provider}.oauth.local`;
+      normalizedEmailFromProvider ??
+      `${providerUserId}@${provider}.oauth.local`;
 
     if (!user) {
       const passwordHash = await bcrypt.hash(
@@ -510,12 +532,12 @@ export class AuthService {
         role: 'player',
         status: 'active',
         oauthProvider: provider,
-        oauthProviderId: dto.providerUserId,
+        oauthProviderId: providerUserId,
       });
 
       await this.userRepository.save(user);
 
-      const fullName = dto.name?.trim() || normalizedEmail;
+      const fullName = normalizedNameFromProvider || normalizedEmail;
       const playerProfile = this.playerProfileRepository.create({
         userId: user.id,
         fullName,
@@ -529,13 +551,13 @@ export class AuthService {
 
       if (!user.oauthProvider || !user.oauthProviderId) {
         user.oauthProvider = provider;
-        user.oauthProviderId = dto.providerUserId;
+        user.oauthProviderId = providerUserId;
         await this.userRepository.save(user);
       }
     }
 
     const name =
-      (dto.name?.trim() ||
+      (normalizedNameFromProvider ||
         (
           user as {
             playerProfile?: { fullName?: string };
@@ -548,6 +570,122 @@ export class AuthService {
 
     const tokens = this.issueTokens(user);
     return this.toAuthResponse(user, tokens, name || user.email);
+  }
+
+  private async verifyGoogleIdentity(dto: OAuthLoginDto): Promise<{
+    providerUserId: string;
+    email?: string;
+    name?: string;
+  }> {
+    if (!dto.idToken) {
+      throw new BadRequestException('Google OAuth requires an ID token');
+    }
+
+    const clientIds =
+      this.configService.get<string[]>('oauth.google.clientIds') ?? [];
+
+    if (clientIds.length === 0) {
+      throw new UnauthorizedException('Google OAuth is not configured');
+    }
+
+    const oauthClient = new OAuth2Client();
+
+    let payload: TokenPayload | undefined;
+    try {
+      const ticket = await oauthClient.verifyIdToken({
+        idToken: dto.idToken,
+        audience: clientIds,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw new UnauthorizedException('Invalid Google ID token');
+    }
+
+    if (!payload?.sub) {
+      throw new UnauthorizedException('Invalid Google identity payload');
+    }
+
+    if (payload.email && payload.email_verified === false) {
+      throw new UnauthorizedException('Google email is not verified');
+    }
+
+    return {
+      providerUserId: payload.sub,
+      email: payload.email,
+      name: payload.name,
+    };
+  }
+
+  private async verifyFacebookIdentity(dto: OAuthLoginDto): Promise<{
+    providerUserId: string;
+    email?: string;
+    name?: string;
+  }> {
+    if (!dto.accessToken) {
+      throw new BadRequestException('Facebook OAuth requires an access token');
+    }
+
+    const facebookAppId = this.configService.get<string>(
+      'oauth.facebook.appId',
+    );
+    const facebookAppSecret = this.configService.get<string>(
+      'oauth.facebook.appSecret',
+    );
+
+    try {
+      if (facebookAppId && facebookAppSecret) {
+        const appAccessToken = `${facebookAppId}|${facebookAppSecret}`;
+        const debugUrl = new URL('https://graph.facebook.com/debug_token');
+        debugUrl.searchParams.set('input_token', dto.accessToken);
+        debugUrl.searchParams.set('access_token', appAccessToken);
+
+        const debugResponse = await fetch(debugUrl.toString());
+        const debugPayload = (await debugResponse.json()) as {
+          data?: { is_valid?: boolean; app_id?: string };
+        };
+
+        if (!debugResponse.ok || !debugPayload.data?.is_valid) {
+          throw new UnauthorizedException('Invalid Facebook access token');
+        }
+
+        if (
+          debugPayload.data.app_id &&
+          facebookAppId &&
+          debugPayload.data.app_id !== facebookAppId
+        ) {
+          throw new UnauthorizedException(
+            'Facebook token app ID does not match configuration',
+          );
+        }
+      }
+
+      const meUrl = new URL('https://graph.facebook.com/me');
+      meUrl.searchParams.set('fields', 'id,name,email');
+      meUrl.searchParams.set('access_token', dto.accessToken);
+
+      const meResponse = await fetch(meUrl.toString());
+      const mePayload = (await meResponse.json()) as {
+        id?: string;
+        email?: string;
+        name?: string;
+      };
+
+      if (!meResponse.ok || !mePayload.id) {
+        throw new UnauthorizedException('Invalid Facebook identity payload');
+      }
+
+      return {
+        providerUserId: mePayload.id,
+        email: mePayload.email,
+        name: mePayload.name,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      throw new UnauthorizedException('Could not verify Facebook access token');
+    }
   }
 
   private issueTokens(

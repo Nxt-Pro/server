@@ -24,8 +24,8 @@ const createEventQueryBuilderMock = (): EventQueryBuilderMock => {
   qb.where = jest.fn(() => qb as EventQueryBuilderMock);
   qb.andWhere = jest.fn(() => qb as EventQueryBuilderMock);
   qb.orderBy = jest.fn(() => qb as EventQueryBuilderMock);
-  qb.skip = jest.fn(() => qb as EventQueryBuilderMock);
-  qb.take = jest.fn(() => qb as EventQueryBuilderMock);
+  qb.skip = jest.fn((_skip: number) => qb as EventQueryBuilderMock);
+  qb.take = jest.fn((_take: number) => qb as EventQueryBuilderMock);
   qb.getMany = jest.fn().mockResolvedValue([] as Event[]);
   qb.getManyAndCount = jest.fn().mockResolvedValue([[] as Event[], 0]);
 

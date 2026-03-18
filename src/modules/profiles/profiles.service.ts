@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Raw, Repository } from 'typeorm';
 import type {
   CreateScoutNoteDto,
   GlobalSearchQueryDto,
@@ -26,10 +26,16 @@ import {
   ScoutProfile,
   User,
 } from '@/database/entities';
+import {
+  PlayerProfileRepository,
+  ScoutProfileRepository,
+} from '@/database/repositories';
 
 @Injectable()
 export class ProfilesService {
   private readonly userRepository: Repository<User>;
+  private readonly playerDiscoveryRepository: PlayerProfileRepository;
+  private readonly scoutDiscoveryRepository: ScoutProfileRepository;
   private readonly playerProfileRepository: Repository<PlayerProfile>;
   private readonly scoutProfileRepository: Repository<ScoutProfile>;
   private readonly blockRepository: Repository<Block>;
@@ -37,6 +43,8 @@ export class ProfilesService {
   private readonly scoutNotesRepository: Repository<ScoutNotes>;
 
   constructor(
+    playerDiscoveryRepository: PlayerProfileRepository,
+    scoutDiscoveryRepository: ScoutProfileRepository,
     @InjectRepository(User)
     userRepository: Repository<User>,
     @InjectRepository(PlayerProfile)
@@ -50,6 +58,8 @@ export class ProfilesService {
     @InjectRepository(ScoutNotes)
     scoutNotesRepository: Repository<ScoutNotes>,
   ) {
+    this.playerDiscoveryRepository = playerDiscoveryRepository;
+    this.scoutDiscoveryRepository = scoutDiscoveryRepository;
     this.userRepository = userRepository;
     this.playerProfileRepository = playerProfileRepository;
     this.scoutProfileRepository = scoutProfileRepository;
@@ -134,40 +144,27 @@ export class ProfilesService {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(50, Math.max(1, query.limit ?? 20));
 
-    const qb = this.playerProfileRepository
-      .createQueryBuilder('p')
-      .orderBy('p.aiScore', 'DESC')
-      .addOrderBy('p.totalViews', 'DESC');
+    const filter: Record<string, unknown> = {};
+    if (query.position) filter.position = query.position;
+    if (query.country) filter.country = ILike(`%${query.country}%`);
+    if (query.city) filter.city = ILike(`%${query.city}%`);
+    if (query.availabilityStatus)
+      filter.availabilityStatus = query.availabilityStatus;
 
-    if (query.position) {
-      qb.andWhere('p.position = :position', { position: query.position });
-    }
-    if (query.country) {
-      qb.andWhere('p.country ILIKE :country', {
-        country: `%${query.country}%`,
-      });
-    }
-    if (query.city) {
-      qb.andWhere('p.city ILIKE :city', { city: `%${query.city}%` });
-    }
-    if (query.availabilityStatus) {
-      qb.andWhere('p.availability_status = :status', {
-        status: query.availabilityStatus,
-      });
-    }
-
-    const [profiles, total] = await qb
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getManyAndCount();
-
-    const data = profiles.map(p => this.toPlayerProfileResponse(p));
-    return {
-      data,
-      total,
+    const paginated = await this.playerDiscoveryRepository.paginate({
+      filter: filter,
+      order: { aiScore: 'DESC', totalViews: 'DESC' },
       page,
       limit,
-      totalPages: Math.ceil(total / limit) || 1,
+    });
+
+    const data = paginated.documents.map(p => this.toPlayerProfileResponse(p));
+    return {
+      data,
+      total: paginated.count,
+      page,
+      limit,
+      totalPages: paginated.pages || 1,
     };
   }
 
@@ -181,34 +178,29 @@ export class ProfilesService {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(50, Math.max(1, query.limit ?? 20));
 
-    const qb = this.scoutProfileRepository
-      .createQueryBuilder('s')
-      .orderBy('s.profile_completeness', 'DESC')
-      .addOrderBy('s.created_at', 'DESC');
-
-    if (query.organizationType) {
-      qb.andWhere('s.organization_type = :type', {
-        type: query.organizationType,
-      });
-    }
+    const filter: Record<string, unknown> = {};
+    if (query.organizationType)
+      filter.organizationType = query.organizationType;
     if (query.country) {
-      qb.andWhere('s.countries_covered ILIKE :country', {
+      filter.countriesCovered = Raw(alias => `${alias} ILIKE :country`, {
         country: `%${query.country}%`,
       });
     }
 
-    const [profiles, total] = await qb
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getManyAndCount();
-
-    const data = profiles.map(s => this.toScoutProfileResponse(s));
-    return {
-      data,
-      total,
+    const paginated = await this.scoutDiscoveryRepository.paginate({
+      filter: filter,
+      order: { profileCompleteness: 'DESC', createdAt: 'DESC' },
       page,
       limit,
-      totalPages: Math.ceil(total / limit) || 1,
+    });
+
+    const data = paginated.documents.map(s => this.toScoutProfileResponse(s));
+    return {
+      data,
+      total: paginated.count,
+      page,
+      limit,
+      totalPages: paginated.pages || 1,
     };
   }
 

@@ -31,8 +31,15 @@ export class TransformInterceptor<T> implements NestInterceptor<
     const response = context.switchToHttp().getResponse<Response>();
     const statusCode: number = response.statusCode;
 
-    function hasDataProp(obj: unknown): obj is { data: T; message?: string } {
-      return typeof obj === 'object' && obj !== null && 'data' in obj;
+    function isSimpleDataEnvelope(
+      obj: unknown,
+    ): obj is { data: T; message?: string } {
+      if (typeof obj !== 'object' || obj === null || !('data' in obj)) {
+        return false;
+      }
+
+      const keys = Object.keys(obj as Record<string, unknown>);
+      return keys.every(key => key === 'data' || key === 'message');
     }
 
     return next.handle().pipe(
@@ -40,8 +47,8 @@ export class TransformInterceptor<T> implements NestInterceptor<
         success: true,
         status: 'success',
         statusCode,
-        message: hasDataProp(data) ? data.message : undefined,
-        data: hasDataProp(data) ? data.data : data,
+        message: isSimpleDataEnvelope(data) ? data.message : undefined,
+        data: isSimpleDataEnvelope(data) ? data.data : data,
         timestamp: new Date().toISOString(),
         path: request.url,
       })),
