@@ -20,11 +20,16 @@ import type {
 
 import {
   Block,
+  CareerTimeline,
   Mute,
   PlayerProfile,
+  PlayerStats,
+  Post,
   ScoutNotes,
   ScoutProfile,
   User,
+  Video,
+  VideoSkillAnalysis,
 } from '@/database/entities';
 import {
   PlayerProfileRepository,
@@ -41,6 +46,11 @@ export class ProfilesService {
   private readonly blockRepository: Repository<Block>;
   private readonly muteRepository: Repository<Mute>;
   private readonly scoutNotesRepository: Repository<ScoutNotes>;
+  private readonly careerTimelineRepository: Repository<CareerTimeline>;
+  private readonly playerStatsRepository: Repository<PlayerStats>;
+  private readonly postRepository: Repository<Post>;
+  private readonly videoRepository: Repository<Video>;
+  private readonly videoSkillAnalysisRepository: Repository<VideoSkillAnalysis>;
 
   constructor(
     playerDiscoveryRepository: PlayerProfileRepository,
@@ -57,6 +67,16 @@ export class ProfilesService {
     muteRepository: Repository<Mute>,
     @InjectRepository(ScoutNotes)
     scoutNotesRepository: Repository<ScoutNotes>,
+    @InjectRepository(CareerTimeline)
+    careerTimelineRepository: Repository<CareerTimeline>,
+    @InjectRepository(PlayerStats)
+    playerStatsRepository: Repository<PlayerStats>,
+    @InjectRepository(Post)
+    postRepository: Repository<Post>,
+    @InjectRepository(Video)
+    videoRepository: Repository<Video>,
+    @InjectRepository(VideoSkillAnalysis)
+    videoSkillAnalysisRepository: Repository<VideoSkillAnalysis>,
   ) {
     this.playerDiscoveryRepository = playerDiscoveryRepository;
     this.scoutDiscoveryRepository = scoutDiscoveryRepository;
@@ -66,6 +86,11 @@ export class ProfilesService {
     this.blockRepository = blockRepository;
     this.muteRepository = muteRepository;
     this.scoutNotesRepository = scoutNotesRepository;
+    this.careerTimelineRepository = careerTimelineRepository;
+    this.playerStatsRepository = playerStatsRepository;
+    this.postRepository = postRepository;
+    this.videoRepository = videoRepository;
+    this.videoSkillAnalysisRepository = videoSkillAnalysisRepository;
   }
 
   async getPlayerProfile(profileId: string): Promise<PlayerProfileResponseDto> {
@@ -75,6 +100,14 @@ export class ProfilesService {
     if (!profile) {
       throw new NotFoundException('Player profile not found');
     }
+
+    const recalculatedCompleteness =
+      await this.calculatePlayerCompleteness(profile);
+    if (Number(profile.profileCompleteness ?? 0) !== recalculatedCompleteness) {
+      profile.profileCompleteness = recalculatedCompleteness;
+      await this.playerProfileRepository.save(profile);
+    }
+
     return this.toPlayerProfileResponse(profile);
   }
 
@@ -96,7 +129,8 @@ export class ProfilesService {
       throw new ForbiddenException('Only players can update player profile');
     }
     this.applyPlayerProfileUpdates(profile, dto);
-    profile.profileCompleteness = this.calculatePlayerCompleteness(profile);
+    profile.profileCompleteness =
+      await this.calculatePlayerCompleteness(profile);
     await this.playerProfileRepository.save(profile);
     return this.toPlayerProfileResponse(profile);
   }
@@ -676,7 +710,63 @@ export class ProfilesService {
    * Calculates player profile completeness as a percentage (0–100).
    * Checks the most important fields a player should fill out.
    */
-  private calculatePlayerCompleteness(profile: PlayerProfile): number {
+  private async calculatePlayerCompleteness(
+    profile: PlayerProfile,
+  ): Promise<number> {
+    const userId = profile.userId;
+    const expectedSkillKeys =
+      profile.position?.toLowerCase() === 'goalkeeper'
+        ? ['diving', 'reflexes', 'handling', 'speed', 'kicking', 'positioning']
+        : ['pace', 'dribbling', 'shooting', 'defending', 'passing', 'physical'];
+
+    const [
+      careerTimelineCount,
+      statsCount,
+      postCount,
+      videoCount,
+      analyzedCount,
+    ] = await Promise.all([
+      this.careerTimelineRepository.count({ where: { playerId: userId } }),
+      this.playerStatsRepository.count({ where: { playerId: userId } }),
+      this.postRepository.count({ where: { userId } }),
+      this.videoRepository
+        .createQueryBuilder('video')
+        .innerJoin('video.attachment', 'attachment')
+        .innerJoin('attachment.post', 'post')
+        .where('post.user_id = :userId', { userId })
+        .getCount(),
+      this.videoSkillAnalysisRepository
+        .createQueryBuilder('analysis')
+        .innerJoin('analysis.video', 'video')
+        .innerJoin('video.attachment', 'attachment')
+        .innerJoin('attachment.post', 'post')
+        .where('post.user_id = :userId', { userId })
+        .andWhere('analysis.status = :status', { status: 'completed' })
+        .andWhere("jsonb_typeof(analysis.ai_score) = 'object'")
+        .andWhere("analysis.ai_score <> '{}'::jsonb")
+        .getCount(),
+    ]);
+
+    const latestSkillAnalysis = await this.videoSkillAnalysisRepository
+      .createQueryBuilder('analysis')
+      .innerJoin('analysis.video', 'video')
+      .innerJoin('video.attachment', 'attachment')
+      .innerJoin('attachment.post', 'post')
+      .where('post.user_id = :userId', { userId })
+      .andWhere('analysis.status = :status', { status: 'completed' })
+      .andWhere("jsonb_typeof(analysis.ai_score) = 'object'")
+      .andWhere("analysis.ai_score <> '{}'::jsonb")
+      .orderBy('analysis.processed_at', 'DESC')
+      .addOrderBy('analysis.updated_at', 'DESC')
+      .getOne();
+
+    const latestAiScore = latestSkillAnalysis?.aiScore ?? {};
+    const hasAllSkillScores = expectedSkillKeys.every(
+      key =>
+        typeof latestAiScore[key] === 'number' &&
+        Number(latestAiScore[key]) > 0,
+    );
+
     const fields: boolean[] = [
       !!profile.fullName,
       !!profile.dateOfBirth,
@@ -692,6 +782,13 @@ export class ProfilesService {
       !!profile.coverImageUrl,
       !!profile.clubName,
       !!profile.availabilityStatus,
+      profile.aiScore != null && Number(profile.aiScore) > 0,
+      careerTimelineCount > 0,
+      statsCount > 0,
+      postCount > 0,
+      videoCount > 0,
+      analyzedCount > 0,
+      hasAllSkillScores,
     ];
     const filled = fields.filter(Boolean).length;
     return Math.round((filled / fields.length) * 100);

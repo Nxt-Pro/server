@@ -13,11 +13,16 @@ import { ScoutProfileController } from './scout-profile.controller';
 import { UserController } from './user.controller';
 import {
   Block,
+  CareerTimeline,
   Mute,
   PlayerProfile,
+  PlayerStats,
+  Post,
   ScoutNotes,
   ScoutProfile,
   User,
+  Video,
+  VideoSkillAnalysis,
 } from '@/database/entities';
 import { RepositoriesModule } from '@/database/repositories.module';
 
@@ -28,6 +33,11 @@ import { RepositoriesModule } from '@/database/repositories.module';
       User,
       PlayerProfile,
       ScoutProfile,
+      CareerTimeline,
+      PlayerStats,
+      Post,
+      Video,
+      VideoSkillAnalysis,
       Block,
       Mute,
       ScoutNotes,

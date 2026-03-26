@@ -1,6 +1,9 @@
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import compression from 'compression';
 import helmet from 'helmet';
+import express from 'express';
 
 import { ConfigService } from '@nestjs/config';
 import { LoggingMiddleware } from '@/common/middlewares';
@@ -24,6 +27,16 @@ export function setupServer(
     origin: configService.get<string>('corsOrigin', '*'),
     credentials: true,
   });
+
+  const uploadDir = configService.get<string>(
+    'upload.localUploadDir',
+    'uploads',
+  );
+  const uploadPath = join(process.cwd(), uploadDir);
+  if (!existsSync(uploadPath)) {
+    mkdirSync(uploadPath, { recursive: true });
+  }
+  app.use('/uploads', express.static(uploadPath));
 
   // Global pipes
   app.useGlobalPipes(

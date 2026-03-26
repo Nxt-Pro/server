@@ -182,4 +182,15 @@ export class PostsController {
   reportPost(@CurrentUser() user: JwtPayload, @Body() dto: ReportPostDto) {
     return this.postsService.reportPost(user.sub, dto);
   }
+
+  @Get()
+  listPosts(
+    @CurrentUser() user: JwtPayload,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('mine') mine?: string,
+  ) {
+    const onlyMine = mine !== 'false' && mine !== '0';
+    return this.postsService.listPosts(user.sub, page, limit, onlyMine);
+  }
 }

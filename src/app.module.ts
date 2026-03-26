@@ -29,6 +29,7 @@ import { NotificationsModule } from '@/modules/notifications';
 import { PlayerModule } from '@/modules/player/player.module';
 import { PostsModule } from '@/modules/posts/posts.module';
 import { ProfilesModule } from '@/modules/profiles/profiles.module';
+import { UploadsModule } from '@/modules/uploads/uploads.module';
 import { VenuesModule } from '@/modules/venues';
 
 @Module({
@@ -72,6 +73,7 @@ import { VenuesModule } from '@/modules/venues';
     VenuesModule,
     NotificationsModule,
     FirebaseModule,
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [

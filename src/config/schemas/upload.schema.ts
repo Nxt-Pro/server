@@ -1,6 +1,19 @@
 import * as Yup from 'yup';
 
 export const uploadSchema = Yup.object({
+  UPLOAD_STORAGE_PROVIDER: Yup.string()
+    .oneOf(
+      ['local', 'cloud'],
+      'UPLOAD_STORAGE_PROVIDER must be either local or cloud',
+    )
+    .default('local'),
+
+  UPLOAD_LOCAL_DIR: Yup.string().default('uploads'),
+
+  UPLOAD_PUBLIC_BASE_URL: Yup.string()
+    .url('UPLOAD_PUBLIC_BASE_URL must be a valid URL')
+    .required('UPLOAD_PUBLIC_BASE_URL is required'),
+
   CDN_BASE_URL: Yup.string()
     .url('CDN_BASE_URL must be a valid URL')
     .required('CDN_BASE_URL is required'),

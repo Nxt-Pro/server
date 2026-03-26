@@ -300,6 +300,49 @@ export class PostsService {
     };
   }
 
+  async listPosts(
+    userId: string,
+    page: number,
+    limit: number,
+    onlyMine = true,
+  ): Promise<PaginatedPostsDto> {
+    const hiddenUserIds = await this.getHiddenUserIds(userId);
+
+    const qb = this.postRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.attachments', 'a')
+      .leftJoinAndSelect('a.video', 'v')
+      .leftJoinAndSelect('p.user', 'u')
+      .orderBy('p.createdAt', 'DESC');
+
+    if (onlyMine) {
+      qb.where('p.userId = :userId', { userId });
+    } else {
+      qb.where('(p.visibility = :publicVisibility OR p.userId = :userId)', {
+        publicVisibility: 'public',
+        userId,
+      });
+
+      if (hiddenUserIds.length > 0) {
+        qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
+      }
+    }
+
+    const [posts, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const data = posts.map(p => this.toPostResponse(p));
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
   async getHighlightsFeed(
     userId: string,
     page: number,

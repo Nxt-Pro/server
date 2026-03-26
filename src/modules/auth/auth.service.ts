@@ -77,15 +77,28 @@ export class AuthService {
       const playerProfile = this.playerProfileRepository.create({
         userId: user.id,
         fullName: fullName || user.email,
-        dateOfBirth: new Date('2000-01-01'), // placeholder until profile is updated
+        dateOfBirth: dto.dateOfBirth
+          ? new Date(dto.dateOfBirth)
+          : new Date('2000-01-01'),
+        position: dto.position?.trim() || undefined,
+        city: dto.city?.trim() || undefined,
+        country: dto.country?.trim() || undefined,
+        nationality: dto.nationality?.trim() || undefined,
+        heightCm: dto.heightCm,
+        weightKg: dto.weightKg,
       });
       await this.playerProfileRepository.save(playerProfile);
     } else if (dto.role === 'scout') {
       const scoutProfile = this.scoutProfileRepository.create({
         userId: user.id,
         fullName: fullName || user.email,
-        organization: '',
-        organizationType: 'independent',
+        organization: dto.organization?.trim() || '',
+        organizationType: dto.organizationType || 'independent',
+        yearsExperience: dto.yearsExperience,
+        countriesCovered:
+          dto.countriesCovered
+            ?.map(country => country.trim())
+            .filter(Boolean) || [],
       });
       await this.scoutProfileRepository.save(scoutProfile);
     }
