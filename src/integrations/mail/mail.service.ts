@@ -5,13 +5,23 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import nodemailer, { type Transporter } from 'nodemailer';
+import nodemailer from 'nodemailer';
+
+type MailTransporter = {
+  sendMail: (message: {
+    from: string;
+    to: string;
+    subject: string;
+    text?: string;
+    html?: string;
+  }) => Promise<unknown>;
+};
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
 
-  private readonly transporter: Transporter | null;
+  private readonly transporter: MailTransporter | null;
   private readonly fromAddress: string;
 
   constructor(
@@ -35,11 +45,16 @@ export class MailService {
       return;
     }
 
-    this.transporter = (
-      nodemailer as unknown as {
-        createTransport: (options: unknown) => Transporter;
-      }
-    ).createTransport({
+    const nodemailerSafe = nodemailer as unknown as {
+      createTransport: (options: {
+        host: string;
+        port: number;
+        secure: boolean;
+        auth: { user: string; pass: string };
+      }) => MailTransporter;
+    };
+
+    this.transporter = nodemailerSafe.createTransport({
       host,
       port,
       secure,

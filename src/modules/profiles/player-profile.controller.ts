@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
-import { UpdatePlayerProfileDto } from './dto';
+import { UpdatePlayerProfileDto, UpdatePlayerSkillScoreDto } from './dto';
 import { ProfilesService } from './profiles.service';
 import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -23,5 +23,13 @@ export class PlayerProfileController {
     @Body() dto: UpdatePlayerProfileDto,
   ) {
     return this.profilesService.updatePlayerProfile(user.sub, dto);
+  }
+
+  @Patch('skills')
+  updateSkillScore(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdatePlayerSkillScoreDto,
+  ) {
+    return this.profilesService.updatePlayerSkillScore(user.sub, dto);
   }
 }

@@ -71,6 +71,7 @@ export abstract class BaseSkillAnalysisProcessor<
       const { score, details } = await this.analyzeSkill(
         skill,
         payload.videoUrl,
+        payload.playerId,
       );
 
       (skills as Record<string, number>)[skill] = score;
@@ -116,6 +117,7 @@ export abstract class BaseSkillAnalysisProcessor<
   protected async analyzeSkill(
     skill: TSkill,
     videoUrl: string,
+    playerId: string,
   ): Promise<{ score: number; details: unknown }> {
     this.logger.log(`Analyzing skill: ${skill}`);
 
@@ -123,6 +125,7 @@ export abstract class BaseSkillAnalysisProcessor<
       videoUrl,
       analysisType: this.getAnalysisType(),
       skill,
+      playerId,
     });
 
     return {

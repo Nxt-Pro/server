@@ -6,6 +6,7 @@ export * from './player-profile-response.dto';
 export * from './scout-note.dto';
 export * from './scout-profile-response.dto';
 export * from './update-player-profile.dto';
+export * from './update-player-skill-score.dto';
 export * from './update-scout-profile.dto';
 export * from './upload-image.dto';
 export * from './user-summary.dto';
