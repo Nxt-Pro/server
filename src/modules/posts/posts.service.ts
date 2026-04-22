@@ -112,14 +112,62 @@ export class PostsService {
     userId: string,
     dto: CreatePostDto,
   ): Promise<PostResponseDto> {
-    const post = this.postRepository.create({
-      userId,
-      caption: dto.caption ?? undefined,
-      visibility:
-        (dto.visibility as 'public' | 'connections' | 'private') ?? 'public',
-    });
-    await this.postRepository.save(post);
-    return this.toPostResponse(post);
+    const createdPost = await this.postRepository.manager.transaction(
+      async manager => {
+        const post = manager.getRepository(Post).create({
+          userId,
+          caption: dto.caption ?? undefined,
+          visibility:
+            (dto.visibility as 'public' | 'connections' | 'private') ??
+            'public',
+        });
+        await manager.getRepository(Post).save(post);
+
+        const mediaUrls = (dto.mediaUrls ?? [])
+          .map(url => url.trim())
+          .filter(Boolean)
+          .slice(0, 10);
+
+        for (const [position, url] of mediaUrls.entries()) {
+          const contentType = this.inferAttachmentType(url);
+
+          const attachment = manager.getRepository(Attachment).create({
+            postId: post.id,
+            contentType,
+            url,
+            position,
+          });
+          await manager.getRepository(Attachment).save(attachment);
+
+          if (contentType === 'video') {
+            const mediaModeration = manager
+              .getRepository(MediaModeration)
+              .create({
+                attachmentId: attachment.id,
+                status: 'queued',
+              });
+            await manager.getRepository(MediaModeration).save(mediaModeration);
+
+            const video = manager.getRepository(Video).create({
+              id: attachment.id,
+              videoDuration: 0,
+            });
+            await manager.getRepository(Video).save(video);
+          }
+        }
+
+        return manager.getRepository(Post).findOne({
+          where: { id: post.id },
+          relations: ['attachments', 'attachments.video'],
+        });
+      },
+    );
+
+    if (!createdPost) {
+      throw new NotFoundException('Post not found');
+    }
+
+    return this.toPostResponse(createdPost);
   }
 
   async createAiVideo(
@@ -671,6 +719,12 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
     return post;
+  }
+
+  private inferAttachmentType(url: string): 'image' | 'video' {
+    const normalized = url.toLowerCase();
+    const isVideo = /(\.mp4|\.mov|\.webm|\.mkv|\.avi)(\?|#|$)/.test(normalized);
+    return isVideo ? 'video' : 'image';
   }
 
   private toPostResponse(
