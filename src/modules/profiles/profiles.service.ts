@@ -13,6 +13,7 @@ import type {
   PlayerProfileResponseDto,
   ScoutProfileResponseDto,
   UpdatePlayerProfileDto,
+  UpdatePlayerSkillScoreDto,
   UpdateScoutNoteDto,
   UpdateScoutProfileDto,
   UserSummaryDto,
@@ -131,6 +132,36 @@ export class ProfilesService {
     this.applyPlayerProfileUpdates(profile, dto);
     profile.profileCompleteness =
       await this.calculatePlayerCompleteness(profile);
+    await this.playerProfileRepository.save(profile);
+    return this.toPlayerProfileResponse(profile);
+  }
+
+  async updatePlayerSkillScore(
+    userId: string,
+    dto: UpdatePlayerSkillScoreDto,
+  ): Promise<PlayerProfileResponseDto> {
+    const profile = await this.playerProfileRepository.findOne({
+      where: { userId },
+    });
+    if (!profile) {
+      throw new NotFoundException('Player profile not found');
+    }
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['role'],
+    });
+    if (!user || user.role !== 'player') {
+      throw new ForbiddenException('Only players can update player profile');
+    }
+
+    const key = dto.skill.trim().toLowerCase();
+    const level = Math.max(0, Math.min(99, Math.round(dto.score)));
+    const skillScores = { ...(profile.skillScores ?? {}) };
+    skillScores[key] = level;
+    profile.skillScores = skillScores;
+    profile.aiScore = this.calculateAiScoreFromSkills(skillScores);
+    profile.profileCompleteness = this.calculatePlayerCompleteness(profile);
+
     await this.playerProfileRepository.save(profile);
     return this.toPlayerProfileResponse(profile);
   }
@@ -666,6 +697,7 @@ export class ProfilesService {
       club_name: profile.clubName ?? null,
       preferred_foot: profile.preferredFoot ?? null,
       ai_score: profile.aiScore != null ? Number(profile.aiScore) : 0,
+      skill_scores: profile.skillScores ?? {},
       total_posts: profile.totalPosts,
       total_likes: profile.totalLikes,
       total_views: profile.totalViews,
@@ -678,6 +710,15 @@ export class ProfilesService {
       created_at: profile.createdAt.toISOString(),
       updated_at: profile.updatedAt.toISOString(),
     };
+  }
+
+  private calculateAiScoreFromSkills(scores: Record<string, number>): number {
+    const values = Object.values(scores)
+      .map(v => Number(v))
+      .filter(v => Number.isFinite(v) && v >= 0);
+    if (values.length === 0) return 0;
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return Math.max(0, Math.min(99, Math.round(avg * 100) / 100));
   }
 
   private toScoutProfileResponse(

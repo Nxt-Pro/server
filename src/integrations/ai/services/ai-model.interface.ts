@@ -5,6 +5,8 @@ export interface SkillAnalysisInput {
   videoUrl: string;
   analysisType: AnalysisType;
   skill: OutfieldSkill | GoalkeeperSkill;
+  /** Used to load `height_cm` for NxtPro endpoints that require it (pace, jump). */
+  playerId?: string;
 }
 
 export interface SkillAnalysisOutput {

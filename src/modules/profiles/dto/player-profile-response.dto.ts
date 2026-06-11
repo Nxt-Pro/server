@@ -21,6 +21,7 @@ export class PlayerProfileResponseDto {
   club_name: string | null;
   preferred_foot: 'left' | 'right' | 'both' | null;
   ai_score: number;
+  skill_scores: Record<string, number>;
   total_posts: number;
   total_likes: number;
   total_views: number;

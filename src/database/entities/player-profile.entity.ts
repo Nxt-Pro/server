@@ -112,6 +112,13 @@ export class PlayerProfile {
   })
   aiScore?: number;
 
+  @Column('jsonb', {
+    nullable: false,
+    default: {},
+    name: 'skill_scores',
+  })
+  skillScores: Record<string, number>;
+
   // --- Engagement & Visibility ---
   @Column({ type: 'int', default: 0, name: 'total_posts' })
   totalPosts: number;
