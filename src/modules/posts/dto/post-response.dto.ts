@@ -8,6 +8,8 @@ export class PostResponseDto {
   commentsCount: number;
   viewsCount: number;
   sharesCount: number;
+  isLiked: boolean;
+  isBookmarked: boolean;
   visibility: 'public' | 'connections' | 'private';
   isHighlight: boolean;
   attachments?: AttachmentResponseDto[];

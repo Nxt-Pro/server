@@ -120,6 +120,15 @@ export class PostsController {
     return this.postsService.getTrendingFeed(user.sub, page, limit);
   }
 
+  @Get('bookmarks')
+  getBookmarkedPosts(
+    @CurrentUser() user: JwtPayload,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    return this.postsService.listBookmarkedPosts(user.sub, page, limit);
+  }
+
   @Delete(':id')
   async deletePost(
     @Param('id') postId: string,

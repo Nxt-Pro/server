@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type {
   AddAttachmentDto,
   AiVideoResponseDto,
@@ -292,7 +292,7 @@ export class PostsService {
       .take(limit)
       .getManyAndCount();
 
-    const data = posts.map(p => this.toPostResponse(p));
+    const data = await this.toPostResponses(posts, userId);
     return {
       data,
       total,
@@ -335,7 +335,7 @@ export class PostsService {
       .take(limit)
       .getManyAndCount();
 
-    const data = posts.map(p => this.toPostResponse(p));
+    const data = await this.toPostResponses(posts, userId);
     return {
       data,
       total,
@@ -370,7 +370,7 @@ export class PostsService {
       .take(limit)
       .getManyAndCount();
 
-    const data = posts.map(p => this.toPostResponse(p));
+    const data = await this.toPostResponses(posts, userId);
     return {
       data,
       total,
@@ -406,7 +406,7 @@ export class PostsService {
       .take(limit)
       .getManyAndCount();
 
-    const data = posts.map(p => this.toPostResponse(p));
+    const data = await this.toPostResponses(posts, userId);
     return {
       data,
       total,
@@ -440,7 +440,57 @@ export class PostsService {
     }
     await this.postRepository.increment({ id: postId }, 'viewsCount', 1);
     post.viewsCount += 1;
-    return this.toPostResponse(post);
+    const [response] = await this.toPostResponses([post], userId);
+    return response;
+  }
+
+  async listBookmarkedPosts(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPostsDto> {
+    const [bookmarks, total] = await this.bookmarkRepository.findAndCount({
+      where: { userId, bookmarkableType: 'post' },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const postIds = bookmarks.map(bookmark => bookmark.bookmarkableId);
+    if (postIds.length === 0) {
+      return {
+        data: [],
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      };
+    }
+
+    const posts = await this.postRepository.find({
+      where: { id: In(postIds) },
+      relations: ['user', 'attachments', 'attachments.video'],
+    });
+    const postsById = new Map(posts.map(post => [post.id, post]));
+    const visiblePosts = postIds
+      .map(id => postsById.get(id))
+      .filter(
+        (
+          post,
+        ): post is Post & {
+          attachments?: (Attachment & { video?: Video })[];
+        } =>
+          Boolean(post) &&
+          (post!.visibility !== 'private' || post!.userId === userId),
+      );
+
+    return {
+      data: await this.toPostResponses(visiblePosts, userId),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
   }
 
   async likePost(postId: string, userId: string): Promise<LikeResponseDto> {
@@ -794,8 +844,44 @@ export class PostsService {
     return normalized;
   }
 
+  private async toPostResponses(
+    posts: (Post & { attachments?: (Attachment & { video?: Video })[] })[],
+    userId: string,
+  ): Promise<PostResponseDto[]> {
+    const postIds = posts.map(post => post.id);
+    if (postIds.length === 0) return [];
+
+    const [likes, bookmarks] = await Promise.all([
+      this.likeRepository.find({
+        where: { userId, postId: In(postIds) },
+        select: ['postId'],
+      }),
+      this.bookmarkRepository.find({
+        where: {
+          userId,
+          bookmarkableType: 'post',
+          bookmarkableId: In(postIds),
+        },
+        select: ['bookmarkableId'],
+      }),
+    ]);
+
+    const likedPostIds = new Set(likes.map(like => like.postId));
+    const bookmarkedPostIds = new Set(
+      bookmarks.map(bookmark => bookmark.bookmarkableId),
+    );
+
+    return posts.map(post =>
+      this.toPostResponse(post, {
+        isLiked: likedPostIds.has(post.id),
+        isBookmarked: bookmarkedPostIds.has(post.id),
+      }),
+    );
+  }
+
   private toPostResponse(
     post: Post & { attachments?: (Attachment & { video?: Video })[] },
+    engagement: { isLiked?: boolean; isBookmarked?: boolean } = {},
   ): PostResponseDto {
     const attachments = post.attachments
       ?.slice()
@@ -809,6 +895,8 @@ export class PostsService {
       commentsCount: post.commentsCount,
       viewsCount: post.viewsCount,
       sharesCount: post.sharesCount,
+      isLiked: engagement.isLiked ?? false,
+      isBookmarked: engagement.isBookmarked ?? false,
       visibility: post.visibility,
       isHighlight: post.isHighlight,
       attachments,
