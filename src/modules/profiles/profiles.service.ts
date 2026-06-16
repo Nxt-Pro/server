@@ -160,7 +160,8 @@ export class ProfilesService {
     skillScores[key] = level;
     profile.skillScores = skillScores;
     profile.aiScore = this.calculateAiScoreFromSkills(skillScores);
-    profile.profileCompleteness = this.calculatePlayerCompleteness(profile);
+    profile.profileCompleteness =
+      await this.calculatePlayerCompleteness(profile);
 
     await this.playerProfileRepository.save(profile);
     return this.toPlayerProfileResponse(profile);

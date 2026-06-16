@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -129,6 +130,7 @@ export class PostsService {
           .slice(0, 10);
 
         for (const [position, url] of mediaUrls.entries()) {
+          this.ensureDurableMediaUrl(url);
           const contentType = this.inferAttachmentType(url);
 
           const attachment = manager.getRepository(Attachment).create({
@@ -238,7 +240,7 @@ export class PostsService {
     const attachment = this.attachmentRepository.create({
       postId,
       contentType: dto.contentType,
-      url: dto.url,
+      url: this.ensureDurableMediaUrl(dto.url),
       position: nextPosition,
     });
     await this.attachmentRepository.save(attachment);
@@ -768,6 +770,28 @@ export class PostsService {
     const normalized = url.toLowerCase();
     const isVideo = /(\.mp4|\.mov|\.webm|\.mkv|\.avi)(\?|#|$)/.test(normalized);
     return isVideo ? 'video' : 'image';
+  }
+
+  private ensureDurableMediaUrl(url: string): string {
+    const normalized = url.trim();
+
+    if (!normalized) {
+      throw new BadRequestException('Media URL is required.');
+    }
+
+    if (/^(file|content|blob|data|ph|assets-library|expo):/i.test(normalized)) {
+      throw new BadRequestException(
+        'Media must be uploaded before creating a post.',
+      );
+    }
+
+    if (/ExponentExperienceData|ImagePicker|Caches|cache/i.test(normalized)) {
+      throw new BadRequestException(
+        'Media must be uploaded before creating a post.',
+      );
+    }
+
+    return normalized;
   }
 
   private toPostResponse(

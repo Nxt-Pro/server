@@ -13,16 +13,21 @@ export interface UploadConfig {
 export const uploadConfig = (): UploadConfig => {
   const port = process.env.PORT || '3000';
   const maxSizeMB = parseInt(process.env.MAX_VIDEO_SIZE_MB || '500', 10);
-  const formats = (process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mov,avi,webm')
+  const formats = (
+    process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mov,m4v,avi,webm,mkv,3gp'
+  )
     .split(',')
     .map(f => f.trim().toLowerCase());
 
   const formatToMime: Record<string, string> = {
     mp4: 'video/mp4',
     mov: 'video/quicktime',
+    m4v: 'video/x-m4v',
     avi: 'video/x-msvideo',
     webm: 'video/webm',
     mkv: 'video/x-matroska',
+    '3gp': 'video/3gpp',
+    '3gpp': 'video/3gpp',
     flv: 'video/x-flv',
     wmv: 'video/x-ms-wmv',
   };

@@ -4,8 +4,7 @@ build/
 node_modules/
 
 # uploads
-uploads/
-**/uploads/
+/uploads/
 
 # logs
 logs/
