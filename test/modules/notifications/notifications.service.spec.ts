@@ -94,7 +94,7 @@ describe('NotificationsService', () => {
       title: payload.title,
       message: payload.message,
       type: payload.type,
-      reference_id: payload.referenceId,
+      referenceId: payload.referenceId,
     });
 
     expect(notificationRepo.save).toHaveBeenCalledWith(created);
@@ -138,11 +138,11 @@ describe('NotificationsService', () => {
     const [whereArg, updateArg] = (notificationRepo.update.mock.calls[0] ??
       []) as unknown as [
       { id: string; user: { id: string } },
-      { read_at: unknown },
+      { readAt: unknown },
     ];
 
     expect(whereArg).toEqual({ id: 'notif_1', user: { id: 'user_1' } });
-    expect(updateArg.read_at).toBeInstanceOf(Date);
+    expect(updateArg.readAt).toBeInstanceOf(Date);
   });
 
   it('markAllAsRead only updates unread notifications (IsNull)', async () => {
@@ -154,15 +154,15 @@ describe('NotificationsService', () => {
 
     const [whereArg, updateArg] = (notificationRepo.update.mock.calls[0] ??
       []) as unknown as [
-      { user: { id: string }; read_at: FindOperator<unknown> },
-      { read_at: Date },
+      { user: { id: string }; readAt: FindOperator<unknown> },
+      { readAt: Date },
     ];
 
     expect(whereArg).toMatchObject({ user: { id: 'user_1' } });
-    expect(whereArg.read_at).toBeInstanceOf(FindOperator);
-    expect(whereArg.read_at.type).toBe('isNull');
+    expect(whereArg.readAt).toBeInstanceOf(FindOperator);
+    expect(whereArg.readAt.type).toBe('isNull');
 
-    expect(updateArg.read_at).toBeInstanceOf(Date);
+    expect(updateArg.readAt).toBeInstanceOf(Date);
   });
 
   it('handleNotificationCreate swallows errors (logs) and does not throw', async () => {

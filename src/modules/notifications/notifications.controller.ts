@@ -27,51 +27,51 @@ export class NotificationsController {
 
   @Post('device')
   async registerDevice(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Body() dto: RegisterDeviceDto,
   ) {
-    if (!user) throw HttpError.unauthorized();
-    await this.notificationsService.registerDeviceToken(user.id, dto.token);
+    if (!userId) throw HttpError.unauthorized();
+    await this.notificationsService.registerDeviceToken(userId, dto.token);
     return { message: 'Device registered successfully' };
   }
 
   @Delete('device/:token')
   async removeDevice(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('token') token: string,
   ) {
-    if (!user) throw HttpError.unauthorized();
-    await this.notificationsService.removeDeviceToken(user.id, token);
+    if (!userId) throw HttpError.unauthorized();
+    await this.notificationsService.removeDeviceToken(userId, token);
     return { message: 'Device removed successfully' };
   }
 
   @Get()
   async getNotifications(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Query('limit') limit = 20,
     @Query('offset') offset = 0,
   ) {
     // Check if user exists (handled by Guard usually)
-    if (!user) throw HttpError.unauthorized();
+    if (!userId) throw HttpError.unauthorized();
     return this.notificationsService.getUserNotifications(
-      user.id,
+      userId,
       Number(limit),
       Number(offset),
     );
   }
 
   @Patch('read-all')
-  async markAllAsRead(@CurrentUser() user: { id: string }) {
-    if (!user) throw HttpError.unauthorized();
-    return this.notificationsService.markAllAsRead(user.id);
+  async markAllAsRead(@CurrentUser('sub') userId: string) {
+    if (!userId) throw HttpError.unauthorized();
+    return this.notificationsService.markAllAsRead(userId);
   }
 
   @Patch(':id/read')
   async markAsRead(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') id: string,
   ) {
-    if (!user) throw HttpError.unauthorized();
-    return this.notificationsService.markAsRead(id, user.id);
+    if (!userId) throw HttpError.unauthorized();
+    return this.notificationsService.markAsRead(id, userId);
   }
 }

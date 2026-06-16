@@ -18,10 +18,10 @@ export class EventsController {
 
   @Post()
   async createEvent(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Body() dto: CreateEventDto,
   ) {
-    return this.eventsService.createEvent(user?.id, dto);
+    return this.eventsService.createEvent(userId, dto);
   }
 
   @Get('ongoing')
@@ -41,31 +41,31 @@ export class EventsController {
 
   @Patch(':id')
   async updateEvent(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') eventId: string,
     @Body() dto: UpdateEventDto,
   ) {
-    return this.eventsService.updateEvent(eventId, user?.id, dto);
+    return this.eventsService.updateEvent(eventId, userId, dto);
   }
 
   @Delete(':id')
   async deleteEvent(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') eventId: string,
   ) {
-    await this.eventsService.deleteEvent(eventId, user?.id);
+    await this.eventsService.deleteEvent(eventId, userId);
     return { success: true };
   }
 
   @Post(':id/approve')
   async approveEvent(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') eventId: string,
     @Body() body: { approve: boolean; rejectionReason?: string },
   ) {
     return this.eventsService.approveEvent(
       eventId,
-      user?.id,
+      userId,
       body.approve,
       body.rejectionReason,
     );

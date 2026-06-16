@@ -18,10 +18,10 @@ export class VenuesController {
 
   @Post()
   async createVenue(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Body() dto: CreateVenueDto,
   ) {
-    return this.venuesService.createVenue(user?.id, dto);
+    return this.venuesService.createVenue(userId, dto);
   }
 
   @Get()
@@ -36,19 +36,19 @@ export class VenuesController {
 
   @Patch(':id')
   async updateVenue(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') venueId: string,
     @Body() dto: UpdateVenueDto,
   ) {
-    return this.venuesService.updateVenue(venueId, user?.id, dto);
+    return this.venuesService.updateVenue(venueId, userId, dto);
   }
 
   @Delete(':id')
   async deleteVenue(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') venueId: string,
   ) {
-    await this.venuesService.deleteVenue(venueId, user?.id);
+    await this.venuesService.deleteVenue(venueId, userId);
     return { success: true };
   }
 }

@@ -17,10 +17,10 @@ export class RegistrationsController {
 
   @Post(':id/register')
   async registerForEvent(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') eventId: string,
   ) {
-    return this.registrationsService.registerForEvent(eventId, user?.id);
+    return this.registrationsService.registerForEvent(eventId, userId);
   }
 
   @Get(':id/registrations')
@@ -30,25 +30,25 @@ export class RegistrationsController {
 
   @Patch('registrations/:id')
   async updateRegistration(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') registrationId: string,
     @Body() dto: UpdateRegistrationDto,
   ) {
     return this.registrationsService.updateRegistration(
       registrationId,
-      user?.id,
+      userId,
       dto,
     );
   }
 
   @Delete('registrations/:id')
   async cancelRegistration(
-    @CurrentUser() user: { id: string },
+    @CurrentUser('sub') userId: string,
     @Param('id') registrationId: string,
   ) {
     const registration = await this.registrationsService.cancelRegistration(
       registrationId,
-      user?.id,
+      userId,
     );
     return { success: true, registration };
   }

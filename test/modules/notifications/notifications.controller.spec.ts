@@ -33,11 +33,7 @@ describe('NotificationsController', () => {
 
   it('getNotifications throws if user missing', async () => {
     await expect(
-      controller.getNotifications(
-        undefined as unknown as { id: string },
-        20,
-        0,
-      ),
+      controller.getNotifications(undefined as unknown as string, 20, 0),
     ).rejects.toBeDefined();
     expect(service.getUserNotifications).not.toHaveBeenCalled();
   });
@@ -45,7 +41,7 @@ describe('NotificationsController', () => {
   it('getNotifications calls service with numeric limit/offset', async () => {
     service.getUserNotifications.mockResolvedValue([{ id: 'n1' }]);
 
-    const res = await controller.getNotifications({ id: 'user_1' }, 10, 5);
+    const res = await controller.getNotifications('user_1', 10, 5);
 
     expect(service.getUserNotifications).toHaveBeenCalledWith('user_1', 10, 5);
     expect(res).toEqual([{ id: 'n1' }]);
@@ -54,7 +50,7 @@ describe('NotificationsController', () => {
   it('markAllAsRead calls service', async () => {
     service.markAllAsRead.mockResolvedValue({ affected: 2 });
 
-    const res = await controller.markAllAsRead({ id: 'user_1' });
+    const res = await controller.markAllAsRead('user_1');
 
     expect(service.markAllAsRead).toHaveBeenCalledWith('user_1');
     expect(res).toEqual({ affected: 2 });
@@ -63,7 +59,7 @@ describe('NotificationsController', () => {
   it('markAsRead calls service', async () => {
     service.markAsRead.mockResolvedValue({ affected: 1 });
 
-    const res = await controller.markAsRead({ id: 'user_1' }, 'notif_1');
+    const res = await controller.markAsRead('user_1', 'notif_1');
 
     expect(service.markAsRead).toHaveBeenCalledWith('notif_1', 'user_1');
     expect(res).toEqual({ affected: 1 });

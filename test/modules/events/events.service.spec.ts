@@ -87,7 +87,7 @@ describe('EventsService', () => {
       expect.objectContaining({
         organizer: { id: 'admin-1' },
         createdBy: { id: 'admin-1' },
-        organizer_type: 'admin',
+        organizerType: 'admin',
         status: 'pending_approval',
         participantCount: 0,
         venue: { id: 'venue-1' } as Venue,
