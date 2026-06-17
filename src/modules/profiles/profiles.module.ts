@@ -12,6 +12,7 @@ import { ScoutNotesController } from './scout-notes.controller';
 import { ScoutProfileController } from './scout-profile.controller';
 import { UserController } from './user.controller';
 import {
+  Achievement,
   Block,
   CareerTimeline,
   Mute,
@@ -31,6 +32,7 @@ import { RepositoriesModule } from '@/database/repositories.module';
     RepositoriesModule,
     TypeOrmModule.forFeature([
       User,
+      Achievement,
       PlayerProfile,
       ScoutProfile,
       CareerTimeline,

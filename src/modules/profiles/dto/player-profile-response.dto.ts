@@ -1,3 +1,44 @@
+export class PlayerStatsResponseDto {
+  id: string;
+  player_id: string;
+  season_year: number;
+  goals: number;
+  assists: number;
+  matches_played: number;
+  yellow_cards: number;
+  red_cards: number;
+  clean_sheets: number;
+  avg_rating: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export class CareerTimelineResponseDto {
+  id: string;
+  player_id: string;
+  title: string;
+  description: string | null;
+  start_date: string;
+  end_date: string | null;
+  is_current: boolean;
+  evidence_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export class AchievementResponseDto {
+  id: string;
+  player_id: string;
+  title: string;
+  description: string;
+  year: number;
+  competition_level: 'local' | 'regional' | 'national' | 'international';
+  verified: boolean;
+  evidence_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class PlayerProfileResponseDto {
   id: string;
   user_id: string;
@@ -28,6 +69,9 @@ export class PlayerProfileResponseDto {
   is_featured: boolean;
   featured_until: string | null;
   profile_completeness: number;
+  stats: PlayerStatsResponseDto[];
+  career_timeline: CareerTimelineResponseDto[];
+  achievements: AchievementResponseDto[];
   created_at: string;
   updated_at: string;
 }

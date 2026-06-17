@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Raw, Repository } from 'typeorm';
+import { ILike, In, Raw, Repository } from 'typeorm';
 import type {
   CreateScoutNoteDto,
   GlobalSearchQueryDto,
@@ -21,6 +21,7 @@ import type {
 
 import {
   Block,
+  Achievement,
   CareerTimeline,
   Mute,
   PlayerProfile,
@@ -48,6 +49,7 @@ export class ProfilesService {
   private readonly muteRepository: Repository<Mute>;
   private readonly scoutNotesRepository: Repository<ScoutNotes>;
   private readonly careerTimelineRepository: Repository<CareerTimeline>;
+  private readonly achievementRepository: Repository<Achievement>;
   private readonly playerStatsRepository: Repository<PlayerStats>;
   private readonly postRepository: Repository<Post>;
   private readonly videoRepository: Repository<Video>;
@@ -70,6 +72,8 @@ export class ProfilesService {
     scoutNotesRepository: Repository<ScoutNotes>,
     @InjectRepository(CareerTimeline)
     careerTimelineRepository: Repository<CareerTimeline>,
+    @InjectRepository(Achievement)
+    achievementRepository: Repository<Achievement>,
     @InjectRepository(PlayerStats)
     playerStatsRepository: Repository<PlayerStats>,
     @InjectRepository(Post)
@@ -88,6 +92,7 @@ export class ProfilesService {
     this.muteRepository = muteRepository;
     this.scoutNotesRepository = scoutNotesRepository;
     this.careerTimelineRepository = careerTimelineRepository;
+    this.achievementRepository = achievementRepository;
     this.playerStatsRepository = playerStatsRepository;
     this.postRepository = postRepository;
     this.videoRepository = videoRepository;
@@ -109,7 +114,8 @@ export class ProfilesService {
       await this.playerProfileRepository.save(profile);
     }
 
-    return this.toPlayerProfileResponse(profile);
+    const extras = await this.loadPlayerExtras([profile.userId]);
+    return this.toPlayerProfileResponse(profile, extras.get(profile.userId));
   }
 
   async updatePlayerProfile(
@@ -133,7 +139,8 @@ export class ProfilesService {
     profile.profileCompleteness =
       await this.calculatePlayerCompleteness(profile);
     await this.playerProfileRepository.save(profile);
-    return this.toPlayerProfileResponse(profile);
+    const extras = await this.loadPlayerExtras([profile.userId]);
+    return this.toPlayerProfileResponse(profile, extras.get(profile.userId));
   }
 
   async updatePlayerSkillScore(
@@ -164,7 +171,8 @@ export class ProfilesService {
       await this.calculatePlayerCompleteness(profile);
 
     await this.playerProfileRepository.save(profile);
-    return this.toPlayerProfileResponse(profile);
+    const extras = await this.loadPlayerExtras([profile.userId]);
+    return this.toPlayerProfileResponse(profile, extras.get(profile.userId));
   }
 
   async getScoutProfile(profileId: string): Promise<ScoutProfileResponseDto> {
@@ -224,7 +232,12 @@ export class ProfilesService {
       limit,
     });
 
-    const data = paginated.documents.map(p => this.toPlayerProfileResponse(p));
+    const extras = await this.loadPlayerExtras(
+      paginated.documents.map(player => player.userId),
+    );
+    const data = paginated.documents.map(p =>
+      this.toPlayerProfileResponse(p, extras.get(p.userId)),
+    );
     return {
       data,
       total: paginated.count,
@@ -669,6 +682,11 @@ export class ProfilesService {
 
   private toPlayerProfileResponse(
     profile: PlayerProfile,
+    extras?: {
+      stats: PlayerStats[];
+      careerTimeline: CareerTimeline[];
+      achievements: Achievement[];
+    },
   ): PlayerProfileResponseDto {
     const dateStr =
       profile.dateOfBirth instanceof Date
@@ -708,9 +726,111 @@ export class ProfilesService {
         profile.profileCompleteness != null
           ? Number(profile.profileCompleteness)
           : 0,
+      stats: (extras?.stats ?? []).map(stats => ({
+        id: stats.id,
+        player_id: stats.playerId,
+        season_year: stats.seasonYear,
+        goals: stats.goals,
+        assists: stats.assists,
+        matches_played: stats.matchesPlayed,
+        yellow_cards: stats.yellowCards,
+        red_cards: stats.redCards,
+        clean_sheets: stats.cleanSheets,
+        avg_rating: stats.avgRating != null ? Number(stats.avgRating) : null,
+        created_at: stats.createdAt.toISOString(),
+        updated_at: stats.updatedAt.toISOString(),
+      })),
+      career_timeline: (extras?.careerTimeline ?? []).map(item => ({
+        id: item.id,
+        player_id: item.playerId,
+        title: item.title,
+        description: item.description ?? null,
+        start_date:
+          item.startDate instanceof Date
+            ? item.startDate.toISOString().slice(0, 10)
+            : String(item.startDate),
+        end_date:
+          item.endDate == null
+            ? null
+            : item.endDate instanceof Date
+              ? item.endDate.toISOString().slice(0, 10)
+              : String(item.endDate),
+        is_current: item.isCurrent,
+        evidence_url: item.evidenceUrl ?? null,
+        created_at: item.createdAt.toISOString(),
+        updated_at: item.updatedAt.toISOString(),
+      })),
+      achievements: (extras?.achievements ?? []).map(achievement => ({
+        id: achievement.id,
+        player_id: achievement.playerId,
+        title: achievement.title,
+        description: achievement.description,
+        year: achievement.year,
+        competition_level: achievement.competitionLevel,
+        verified: achievement.verified,
+        evidence_url: achievement.evidenceUrl ?? null,
+        created_at: achievement.createdAt.toISOString(),
+        updated_at: achievement.updatedAt.toISOString(),
+      })),
       created_at: profile.createdAt.toISOString(),
       updated_at: profile.updatedAt.toISOString(),
     };
+  }
+
+  private async loadPlayerExtras(userIds: string[]): Promise<
+    Map<
+      string,
+      {
+        stats: PlayerStats[];
+        careerTimeline: CareerTimeline[];
+        achievements: Achievement[];
+      }
+    >
+  > {
+    const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
+    const extras = new Map<
+      string,
+      {
+        stats: PlayerStats[];
+        careerTimeline: CareerTimeline[];
+        achievements: Achievement[];
+      }
+    >();
+
+    for (const id of uniqueIds) {
+      extras.set(id, { stats: [], careerTimeline: [], achievements: [] });
+    }
+
+    if (uniqueIds.length === 0) {
+      return extras;
+    }
+
+    const [statsRows, timelineRows, achievementRows] = await Promise.all([
+      this.playerStatsRepository.find({
+        where: { playerId: In(uniqueIds) },
+        order: { seasonYear: 'DESC', createdAt: 'DESC' },
+      }),
+      this.careerTimelineRepository.find({
+        where: { playerId: In(uniqueIds) },
+        order: { startDate: 'DESC', createdAt: 'DESC' },
+      }),
+      this.achievementRepository.find({
+        where: { playerId: In(uniqueIds) },
+        order: { year: 'DESC', createdAt: 'DESC' },
+      }),
+    ]);
+
+    for (const stats of statsRows) {
+      extras.get(stats.playerId)?.stats.push(stats);
+    }
+    for (const item of timelineRows) {
+      extras.get(item.playerId)?.careerTimeline.push(item);
+    }
+    for (const achievement of achievementRows) {
+      extras.get(achievement.playerId)?.achievements.push(achievement);
+    }
+
+    return extras;
   }
 
   private calculateAiScoreFromSkills(scores: Record<string, number>): number {
@@ -726,6 +846,7 @@ export class ProfilesService {
     profile: ScoutProfile,
   ): ScoutProfileResponseDto {
     return {
+      id: profile.userId,
       user_id: profile.userId,
       full_name: profile.fullName,
       organization: profile.organization,
