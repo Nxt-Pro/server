@@ -222,7 +222,7 @@ export class ChatService {
     chatId: string,
     senderId: string,
     dto: SendMessageDto,
-  ): Promise<Message> => {
+  ): Promise<Message & { clientMessageId?: string }> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
       relations: ['scout', 'player'],
@@ -272,14 +272,31 @@ export class ChatService {
         .execute();
     }
 
-    this.eventEmitter.emit('chat.message', {
-      chatId,
-      message: savedMessage,
-      senderId,
-      recipientId,
+    const savedMessageWithSender = await this.messageRepository.findOneOrFail({
+      where: { id: savedMessage.id },
+      relations: ['sender', 'chat'],
+    });
+    const updatedChat = await this.chatRepository.findOneOrFail({
+      where: { id: chatId },
+      relations: ['participants', 'participants.user', 'scout', 'player'],
+    });
+    const participantIds = [chat.scout?.id, chat.player?.id].filter(
+      (id): id is string => Boolean(id),
+    );
+    const messageWithClientId = Object.assign(savedMessageWithSender, {
+      clientMessageId: dto.clientMessageId,
     });
 
-    return savedMessage;
+    this.eventEmitter.emit('chat.message', {
+      chatId,
+      message: messageWithClientId,
+      senderId,
+      recipientId,
+      participantIds,
+      chat: updatedChat,
+    });
+
+    return messageWithClientId;
   };
 
   markChatRead = async (chatId: string, userId: string): Promise<void> => {
@@ -301,6 +318,11 @@ export class ChatService {
       .andWhere('sender_id != :userId', { userId })
       .andWhere('read_at IS NULL')
       .execute();
+
+    this.eventEmitter.emit('chat.read', {
+      chatId,
+      userId,
+    });
   };
 
   archiveChat = async (

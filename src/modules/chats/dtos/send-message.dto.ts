@@ -12,4 +12,8 @@ export class SendMessageDto {
   @IsString()
   @IsOptional()
   attachmentUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  clientMessageId?: string;
 }
