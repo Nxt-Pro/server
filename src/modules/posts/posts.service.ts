@@ -160,7 +160,13 @@ export class PostsService {
 
         return manager.getRepository(Post).findOne({
           where: { id: post.id },
-          relations: ['attachments', 'attachments.video'],
+          relations: [
+            'attachments',
+            'attachments.video',
+            'user',
+            'user.playerProfile',
+            'user.scoutProfile',
+          ],
         });
       },
     );
@@ -279,6 +285,8 @@ export class PostsService {
       .leftJoinAndSelect('p.attachments', 'a')
       .leftJoinAndSelect('a.video', 'v')
       .leftJoinAndSelect('p.user', 'u')
+      .leftJoinAndSelect('u.playerProfile', 'upp')
+      .leftJoinAndSelect('u.scoutProfile', 'usp')
       .where('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.createdAt', 'DESC');
@@ -315,6 +323,8 @@ export class PostsService {
       .leftJoinAndSelect('p.attachments', 'a')
       .leftJoinAndSelect('a.video', 'v')
       .leftJoinAndSelect('p.user', 'u')
+      .leftJoinAndSelect('u.playerProfile', 'upp')
+      .leftJoinAndSelect('u.scoutProfile', 'usp')
       .orderBy('p.createdAt', 'DESC');
 
     if (onlyMine) {
@@ -357,6 +367,8 @@ export class PostsService {
       .leftJoinAndSelect('p.attachments', 'a')
       .leftJoinAndSelect('a.video', 'v')
       .leftJoinAndSelect('p.user', 'u')
+      .leftJoinAndSelect('u.playerProfile', 'upp')
+      .leftJoinAndSelect('u.scoutProfile', 'usp')
       .where('p.isHighlight = :isHighlight', { isHighlight: true })
       .andWhere('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.createdAt', 'DESC');
@@ -392,6 +404,8 @@ export class PostsService {
       .leftJoinAndSelect('p.attachments', 'a')
       .leftJoinAndSelect('a.video', 'v')
       .leftJoinAndSelect('p.user', 'u')
+      .leftJoinAndSelect('u.playerProfile', 'upp')
+      .leftJoinAndSelect('u.scoutProfile', 'usp')
       .where('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.viewsCount', 'DESC')
@@ -430,7 +444,13 @@ export class PostsService {
   async getPost(postId: string, userId: string): Promise<PostResponseDto> {
     const post = await this.postRepository.findOne({
       where: { id: postId },
-      relations: ['user', 'attachments', 'attachments.video'],
+      relations: [
+        'user',
+        'user.playerProfile',
+        'user.scoutProfile',
+        'attachments',
+        'attachments.video',
+      ],
     });
     if (!post) {
       throw new NotFoundException('Post not found');
@@ -469,7 +489,13 @@ export class PostsService {
 
     const posts = await this.postRepository.find({
       where: { id: In(postIds) },
-      relations: ['user', 'attachments', 'attachments.video'],
+      relations: [
+        'user',
+        'user.playerProfile',
+        'user.scoutProfile',
+        'attachments',
+        'attachments.video',
+      ],
     });
     const postsById = new Map(posts.map(post => [post.id, post]));
     const visiblePosts = postIds
@@ -880,7 +906,10 @@ export class PostsService {
   }
 
   private toPostResponse(
-    post: Post & { attachments?: (Attachment & { video?: Video })[] },
+    post: Post & {
+      attachments?: (Attachment & { video?: Video })[];
+      user?: User;
+    },
     engagement: { isLiked?: boolean; isBookmarked?: boolean } = {},
   ): PostResponseDto {
     const attachments = post.attachments
@@ -890,6 +919,7 @@ export class PostsService {
     return {
       id: post.id,
       userId: post.userId,
+      author: this.toPostAuthorResponse(post.user),
       caption: post.caption ?? null,
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
@@ -902,6 +932,41 @@ export class PostsService {
       attachments,
       createdAt: post.createdAt.toISOString(),
       updatedAt: post.updatedAt.toISOString(),
+    };
+  }
+
+  private toPostAuthorResponse(user?: User): PostResponseDto['author'] {
+    if (!user) return null;
+
+    if (user.playerProfile) {
+      return {
+        id: user.id,
+        role: user.role,
+        name: user.playerProfile.fullName,
+        profilePictureUrl: user.playerProfile.profilePictureUrl ?? null,
+        position: user.playerProfile.position ?? null,
+        isVerified: user.playerProfile.isVerified,
+      };
+    }
+
+    if (user.scoutProfile) {
+      return {
+        id: user.id,
+        role: user.role,
+        name: user.scoutProfile.fullName,
+        profilePictureUrl: user.scoutProfile.profilePictureUrl ?? null,
+        position: user.scoutProfile.organization,
+        isVerified: user.scoutProfile.verificationStatus === 'verified',
+      };
+    }
+
+    return {
+      id: user.id,
+      role: user.role,
+      name: user.email,
+      profilePictureUrl: null,
+      position: null,
+      isVerified: false,
     };
   }
 

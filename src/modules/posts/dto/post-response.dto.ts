@@ -1,8 +1,18 @@
 import type { AttachmentResponseDto } from './attachment-response.dto';
 
+export class PostAuthorResponseDto {
+  id: string;
+  role: 'player' | 'scout' | 'admin';
+  name: string;
+  profilePictureUrl: string | null;
+  position?: string | null;
+  isVerified?: boolean;
+}
+
 export class PostResponseDto {
   id: string;
   userId: string;
+  author?: PostAuthorResponseDto | null;
   caption: string | null;
   likesCount: number;
   commentsCount: number;

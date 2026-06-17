@@ -32,7 +32,18 @@ export const uploadSchema = Yup.object({
       value => {
         if (!value) return false;
         const formats = value.split(',').map(f => f.trim().toLowerCase());
-        const validFormats = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'flv', 'wmv'];
+        const validFormats = [
+          'mp4',
+          'mov',
+          'm4v',
+          'avi',
+          'webm',
+          'mkv',
+          '3gp',
+          '3gpp',
+          'flv',
+          'wmv',
+        ];
         return formats.every(format => validFormats.includes(format));
       },
     ),
