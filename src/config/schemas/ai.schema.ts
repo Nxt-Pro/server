@@ -29,4 +29,11 @@ export const aiSchema = Yup.object({
           ),
       otherwise: schema => schema.optional(),
     }),
+
+  AI_MODEL_TIMEOUT_MS: Yup.number()
+    .transform((_, orig) =>
+      orig === undefined || orig === '' ? undefined : Number(orig),
+    )
+    .min(1000, 'AI_MODEL_TIMEOUT_MS must be at least 1000ms')
+    .default(120000),
 });

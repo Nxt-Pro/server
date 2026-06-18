@@ -40,7 +40,7 @@ export const typeOrmConfig: TypeOrmModuleAsyncOptions = {
       autoLoadEntities: true,
       synchronize: false, // Never synchronize in production
 
-      migrationsRun: isProduction,
+      migrationsRun: dbConfig.migrationsRun,
       migrationsTableName: 'migrations',
 
       logging: isProduction ? ['error'] : ['query', 'error', 'warn'],

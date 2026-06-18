@@ -1,6 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as Yup from 'yup';
 
+import {
+  aiSchema,
+  cacheSchema,
+  databaseSchema,
+  environmentSchema,
+  jwtSchema,
+  queueSchema,
+  uploadSchema,
+} from '@/config/schemas';
+
 @Injectable()
 export class ConfigValidatorService {
   private readonly logger = new Logger(ConfigValidatorService.name);
@@ -19,17 +29,21 @@ export class ConfigValidatorService {
 
     const strictExternalValidation = this.isExternalValidationStrict();
 
-    const validations = [
-      this.validateEnvironment(),
-      this.validateDatabase(),
-      this.validateJWT(),
+    const validations: Array<{ type: string; task: Promise<void> }> = [
+      { type: 'Environment', task: this.validateEnvironment() },
+      { type: 'Database', task: this.validateDatabase() },
+      { type: 'JWT', task: this.validateJWT() },
+      { type: 'Queue', task: this.validateQueue() },
+      { type: 'Cache', task: this.validateCache() },
+      { type: 'Upload', task: this.validateUpload() },
+      { type: 'AI', task: this.validateAi() },
     ];
 
     if (strictExternalValidation) {
       validations.push(
-        this.validateApp(),
-        this.validateMail(),
-        this.validateOAuth(),
+        { type: 'App', task: this.validateApp() },
+        { type: 'Mail', task: this.validateMail() },
+        { type: 'OAuth', task: this.validateOAuth() },
       );
     } else {
       this.logger.warn(
@@ -37,12 +51,12 @@ export class ConfigValidatorService {
       );
     }
 
-    const results = await Promise.allSettled(validations);
+    const results = await Promise.allSettled(
+      validations.map(validation => validation.task),
+    );
 
     results.forEach((result, index) => {
-      const type = strictExternalValidation
-        ? ['Environment', 'Database', 'JWT', 'App', 'Mail', 'OAuth'][index]
-        : ['Environment', 'Database', 'JWT'][index];
+      const type = validations[index]?.type ?? 'Unknown';
       if (result.status === 'rejected') {
         const reason =
           result.reason instanceof Error
@@ -86,15 +100,13 @@ export class ConfigValidatorService {
    * Validates core environment variables
    */
   private async validateEnvironment(): Promise<void> {
-    const schema = Yup.object({
-      NODE_ENV: Yup.string()
-        .required('NODE_ENV is required')
-        .oneOf(['development', 'production', 'test']),
-      PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .required('PORT is required')
-        .min(1024)
-        .max(65535),
+    const schema = environmentSchema.shape({
+      CORS_ORIGIN: this.isProductionLike()
+        ? Yup.string()
+            .required('CORS_ORIGIN is required in production')
+            .url('CORS_ORIGIN must be a valid URL in production')
+            .notOneOf(['*'], 'CORS_ORIGIN cannot be * in production')
+        : Yup.string().default('*'),
     });
 
     await this.runSchemaValidation(schema, 'Environment variables');
@@ -104,39 +116,79 @@ export class ConfigValidatorService {
    * Validates database-related environment variables
    */
   private async validateDatabase(): Promise<void> {
-    const schema = Yup.object({
-      DB_HOST: Yup.string().required('DB_HOST is required'),
-      DB_PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .required('DB_PORT is required'),
-      DB_USERNAME: Yup.string().required('DB_USERNAME is required'),
-      DB_PASSWORD: Yup.string().required('DB_PASSWORD is required'),
-      DB_NAME: Yup.string().required('DB_NAME is required'),
-    });
-
-    await this.runSchemaValidation(schema, 'Database configuration');
+    await this.runSchemaValidation(databaseSchema, 'Database configuration');
   }
 
   /**
    * Validates JWT-related environment variables
    */
   private async validateJWT(): Promise<void> {
-    const schema = Yup.object({
-      JWT_SECRET: Yup.string()
-        .required('JWT_SECRET is required')
-        .min(32)
-        .notOneOf(
-          ['your_jwt_secret', 'secret', 'password'],
-          'JWT_SECRET is too weak',
-        ),
-      JWT_EXPIRES_IN: Yup.string().default('7d'),
-      JWT_REFRESH_SECRET: Yup.string()
-        .required('JWT_REFRESH_SECRET is required')
-        .min(32),
-      JWT_REFRESH_EXPIRES_IN: Yup.string().default('30d'),
-    });
+    await this.runSchemaValidation(jwtSchema, 'JWT configuration');
+  }
 
-    await this.runSchemaValidation(schema, 'JWT configuration');
+  /**
+   * Validates queue Redis and BullMQ configuration
+   */
+  private async validateQueue(): Promise<void> {
+    const schema = (
+      this.isProductionLike()
+        ? queueSchema.shape({
+            REDIS_HOST: Yup.string().required(
+              'REDIS_HOST is required in production',
+            ),
+            REDIS_PORT: Yup.number()
+              .transform((_, orig) =>
+                orig === undefined || orig === '' ? undefined : Number(orig),
+              )
+              .required('REDIS_PORT is required in production'),
+            REDIS_PASSWORD: Yup.string().required(
+              'REDIS_PASSWORD is required in production',
+            ),
+            REDIS_TLS: Yup.string()
+              .required('REDIS_TLS is required in production')
+              .oneOf(['true', 'false'], 'REDIS_TLS must be true or false'),
+          })
+        : queueSchema
+    ) as Yup.AnyObjectSchema;
+
+    await this.runSchemaValidation(schema, 'Queue configuration');
+  }
+
+  /**
+   * Validates cache Redis configuration
+   */
+  private async validateCache(): Promise<void> {
+    await this.runSchemaValidation(cacheSchema, 'Cache configuration');
+  }
+
+  /**
+   * Validates upload and public media URL configuration
+   */
+  private async validateUpload(): Promise<void> {
+    const schema = (
+      this.isProductionLike()
+        ? uploadSchema.shape({
+            UPLOAD_PUBLIC_BASE_URL: Yup.string()
+              .required('UPLOAD_PUBLIC_BASE_URL is required in production')
+              .url('UPLOAD_PUBLIC_BASE_URL must be a valid URL')
+              .test(
+                'not-localhost',
+                'UPLOAD_PUBLIC_BASE_URL must not use localhost in production',
+                value =>
+                  Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
+              ),
+          })
+        : uploadSchema
+    ) as Yup.AnyObjectSchema;
+
+    await this.runSchemaValidation(schema, 'Upload configuration');
+  }
+
+  /**
+   * Validates AI scoring endpoint configuration
+   */
+  private async validateAi(): Promise<void> {
+    await this.runSchemaValidation(aiSchema, 'AI configuration');
   }
 
   /**
@@ -222,6 +274,7 @@ export class ConfigValidatorService {
    * Returns the main Yup schema used by NestJS ConfigModule validation
    */
   private getEnvSchema(config: Record<string, unknown>): Yup.AnyObjectSchema {
+    const isProduction = this.isProductionLike(config);
     const strictExternalValidation = this.isExternalValidationStrict(config);
     const optionalString = Yup.string().transform(
       (value: string | undefined, originalValue: unknown) =>
@@ -252,14 +305,60 @@ export class ConfigValidatorService {
         .max(65535)
         .default(3000),
 
+      CORS_ORIGIN: isProduction
+        ? Yup.string()
+            .required()
+            .url()
+            .notOneOf(['*'], 'CORS_ORIGIN cannot be * in production')
+        : Yup.string().default('*'),
+
       // Database
       DB_HOST: Yup.string().required(),
-      DB_PORT: Yup.number()
-        .transform((_, original) => Number(original))
-        .default(5432),
+      DB_PORT: isProduction
+        ? Yup.number()
+            .transform((_, originalValue) => {
+              if (originalValue === '' || originalValue === undefined) {
+                return undefined;
+              }
+              return Number(originalValue);
+            })
+            .required()
+        : Yup.number()
+            .transform((_, originalValue) => {
+              if (originalValue === '' || originalValue === undefined) {
+                return undefined;
+              }
+              return Number(originalValue);
+            })
+            .default(5432),
       DB_USERNAME: Yup.string().required(),
       DB_PASSWORD: Yup.string().required(),
       DB_NAME: Yup.string().required(),
+      DB_SSL: isProduction
+        ? Yup.string().required().oneOf(['true', 'false'])
+        : Yup.string().oneOf(['true', 'false']).default('false'),
+      DB_SSL_REJECT_UNAUTHORIZED: Yup.string()
+        .oneOf(['true', 'false'])
+        .default('false'),
+      DB_MIGRATIONS_RUN: Yup.string().oneOf(['true', 'false']).default('false'),
+      DB_POOL_SIZE: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .default(20),
+      DB_QUERY_TIMEOUT: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .default(5000),
 
       // JWT
       JWT_SECRET: Yup.string().required().min(32),
@@ -318,6 +417,152 @@ export class ConfigValidatorService {
       FACEBOOK_APP_SECRET: strictExternalValidation
         ? Yup.string().required()
         : optionalString,
+
+      // Redis, queues, and cache
+      REDIS_HOST: isProduction
+        ? Yup.string().required()
+        : Yup.string().default('localhost'),
+      REDIS_PORT: isProduction
+        ? Yup.number()
+            .transform((_, originalValue) => {
+              if (originalValue === '' || originalValue === undefined) {
+                return undefined;
+              }
+              return Number(originalValue);
+            })
+            .required()
+        : Yup.number()
+            .transform((_, originalValue) => {
+              if (originalValue === '' || originalValue === undefined) {
+                return undefined;
+              }
+              return Number(originalValue);
+            })
+            .default(6379),
+      REDIS_PASSWORD: isProduction ? Yup.string().required() : optionalString,
+      REDIS_TLS: isProduction
+        ? Yup.string().required().oneOf(['true', 'false'])
+        : Yup.string().oneOf(['true', 'false']).default('false'),
+      REDIS_DB_QUEUE: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(0)
+        .default(0),
+      REDIS_DB_CACHE: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(0)
+        .default(1),
+      CACHE_TTL: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .default(300),
+      QUEUE_CONCURRENCY: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .default(5),
+      QUEUE_MAX_RETRIES: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(0)
+        .default(3),
+      QUEUE_LIMITER_MAX: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .default(10),
+      QUEUE_LIMITER_DURATION: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .default(1000),
+
+      // Uploads and public media URLs
+      UPLOAD_STORAGE_PROVIDER: Yup.string()
+        .oneOf(['local', 'cloud'])
+        .default('local'),
+      UPLOAD_LOCAL_DIR: Yup.string().default('uploads'),
+      UPLOAD_PUBLIC_BASE_URL: isProduction
+        ? Yup.string()
+            .required()
+            .url()
+            .test(
+              'not-localhost',
+              'UPLOAD_PUBLIC_BASE_URL must not use localhost in production',
+              value => Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
+            )
+        : Yup.string().url().default('http://localhost:3000/uploads'),
+      CDN_BASE_URL: Yup.string().url().default('https://cdn.nxtpro.com'),
+      MAX_VIDEO_SIZE_MB: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .max(5000)
+        .default(500),
+      ALLOWED_VIDEO_FORMATS: Yup.string().default(
+        'mp4,mov,m4v,avi,webm,mkv,3gp',
+      ),
+
+      // AI scoring
+      USE_MOCK_AI: Yup.string().oneOf(['true', 'false']).default('true'),
+      AI_MODEL_API_URL: optionalString.url(),
+      AI_MODEL_API_KEY: optionalString.min(10),
+      AI_MODEL_TIMEOUT_MS: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1000)
+        .default(120000),
+
+      // Optional push configuration; FirebaseService degrades gracefully if absent.
+      FIREBASE_PROJECT_ID: optionalString,
+      FIREBASE_CLIENT_EMAIL: optionalString,
+      FIREBASE_PRIVATE_KEY: optionalString,
+
+      // Seed-only values. The seed script enforces them in production.
+      SUPER_ADMIN_1_USERNAME: optionalString,
+      SUPER_ADMIN_1_EMAIL: optionalString.email(),
+      SUPER_ADMIN_1_PASSWORD: optionalString,
+      SUPER_ADMIN_2_USERNAME: optionalString,
+      SUPER_ADMIN_2_EMAIL: optionalString.email(),
+      SUPER_ADMIN_2_PASSWORD: optionalString,
     });
   }
 
@@ -339,6 +584,20 @@ export class ConfigValidatorService {
   }
 
   /**
+   * Infrastructure defaults are development-only; production must be explicit.
+   */
+  private isProductionLike(
+    config: Record<string, unknown> = this.config,
+  ): boolean {
+    return (
+      this.normalizeConfigValue(
+        config.NODE_ENV,
+        'development',
+      ).toLowerCase() === 'production'
+    );
+  }
+
+  /**
    * Converts env values to strings without triggering object stringification lint errors.
    */
   private normalizeConfigValue(value: unknown, fallback = ''): string {
@@ -356,7 +615,7 @@ export class ConfigValidatorService {
    */
   private sanitizeErrorMessage(message: string): string {
     return message.replace(
-      /(JWT_SECRET|DB_PASSWORD|DB_USERNAME|JWT_REFRESH_SECRET|MAIL_PASSWORD|FACEBOOK_APP_SECRET):\s*[^,]*/gi,
+      /(JWT_SECRET|DB_PASSWORD|DB_USERNAME|JWT_REFRESH_SECRET|REDIS_PASSWORD|MAIL_PASSWORD|FACEBOOK_APP_SECRET|SUPER_ADMIN_[12]_PASSWORD):\s*[^,]*/gi,
       '$1: [REDACTED]',
     );
   }

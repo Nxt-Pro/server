@@ -12,20 +12,22 @@ export const uploadSchema = Yup.object({
 
   UPLOAD_PUBLIC_BASE_URL: Yup.string()
     .url('UPLOAD_PUBLIC_BASE_URL must be a valid URL')
-    .required('UPLOAD_PUBLIC_BASE_URL is required'),
+    .default('http://localhost:3000/uploads'),
 
   CDN_BASE_URL: Yup.string()
     .url('CDN_BASE_URL must be a valid URL')
-    .required('CDN_BASE_URL is required'),
+    .default('https://cdn.nxtpro.com'),
 
   MAX_VIDEO_SIZE_MB: Yup.number()
-    .transform((_, orig) => Number(orig))
+    .transform((_, orig) =>
+      orig === undefined || orig === '' ? undefined : Number(orig),
+    )
     .min(1, 'MAX_VIDEO_SIZE_MB must be at least 1MB')
     .max(5000, 'MAX_VIDEO_SIZE_MB cannot exceed 5000MB (5GB)')
-    .required('MAX_VIDEO_SIZE_MB is required'),
+    .default(500),
 
   ALLOWED_VIDEO_FORMATS: Yup.string()
-    .required('ALLOWED_VIDEO_FORMATS is required')
+    .default('mp4,mov,m4v,avi,webm,mkv,3gp')
     .test(
       'valid-formats',
       'ALLOWED_VIDEO_FORMATS must be a comma-separated list of video formats (e.g., mp4,mov,avi,webm)',

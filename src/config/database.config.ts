@@ -8,6 +8,7 @@ export interface DatabaseConfig {
   poolSize: number;
   maxQueryExecutionTime: number;
   ssl: boolean | { rejectUnauthorized: boolean };
+  migrationsRun: boolean;
 }
 
 export const databaseConfig = (): DatabaseConfig => ({
@@ -20,6 +21,7 @@ export const databaseConfig = (): DatabaseConfig => ({
 
   poolSize: parseInt(process.env.DB_POOL_SIZE || '20', 10),
   maxQueryExecutionTime: parseInt(process.env.DB_QUERY_TIMEOUT || '5000', 10),
+  migrationsRun: process.env.DB_MIGRATIONS_RUN === 'true',
 
   ssl:
     process.env.DB_SSL === 'true'
