@@ -18,6 +18,9 @@ export class User extends BaseEntity {
   @Column({ unique: true })
   email: string;
 
+  @Column({ type: 'varchar', unique: true, nullable: true })
+  username?: string | null;
+
   @Column({ select: false, name: 'password_hash' }) // Hide password by default
   passwordHash: string;
 

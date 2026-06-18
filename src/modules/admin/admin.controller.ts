@@ -15,11 +15,13 @@ import { Request as ExpressRequest } from 'express';
 
 import {
   BanUserDto,
+  CreateAdminDto,
   QueryAnalyticsDto,
   QueryAuditLogDto,
   QueryGrowthDto,
   QueryReportsDto,
   ResolveReportDto,
+  UpdateAdminDto,
   UlidParamDto,
   UserIdParamDto,
   VerifyPlayerDto,
@@ -29,6 +31,7 @@ import { AdminGuard } from './guards';
 import {
   AdminAnalyticsService,
   AdminAuditService,
+  AdminManagementService,
   AdminModerationService,
   AdminVerificationService,
 } from './services';
@@ -46,17 +49,20 @@ export class AdminController {
   private readonly verificationService: AdminVerificationService;
   private readonly analyticsService: AdminAnalyticsService;
   private readonly auditService: AdminAuditService;
+  private readonly managementService: AdminManagementService;
 
   constructor(
     moderationService: AdminModerationService,
     verificationService: AdminVerificationService,
     analyticsService: AdminAnalyticsService,
     auditService: AdminAuditService,
+    managementService: AdminManagementService,
   ) {
     this.moderationService = moderationService;
     this.verificationService = verificationService;
     this.analyticsService = analyticsService;
     this.auditService = auditService;
+    this.managementService = managementService;
   }
 
   /**
@@ -176,6 +182,39 @@ export class AdminController {
   @Get('audit-log')
   async getAuditLog(@Query() query: QueryAuditLogDto) {
     return this.auditService.getAuditLog(query);
+  }
+
+  /**
+   * GET /api/admin/admins
+   */
+  @Get('admins')
+  async getAdmins() {
+    return this.managementService.listAdmins();
+  }
+
+  /**
+   * POST /api/admin/admins
+   */
+  @Post('admins')
+  async createAdmin(
+    @Body() dto: CreateAdminDto,
+    @Request() req: RequestWithAdmin,
+  ) {
+    const adminId = this.getAdminId(req);
+    return this.managementService.createAdmin(adminId, dto);
+  }
+
+  /**
+   * PATCH /api/admin/admins/:id
+   */
+  @Patch('admins/:id')
+  async updateAdmin(
+    @Param() params: UlidParamDto,
+    @Body() dto: UpdateAdminDto,
+    @Request() req: RequestWithAdmin,
+  ) {
+    const adminId = this.getAdminId(req);
+    return this.managementService.updateAdmin(adminId, params.id, dto);
   }
 
   private getAdminId(req: RequestWithAdmin): string {

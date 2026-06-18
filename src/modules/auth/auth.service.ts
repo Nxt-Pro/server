@@ -113,6 +113,7 @@ export class AuthService {
       select: [
         'id',
         'email',
+        'username',
         'passwordHash',
         'role',
         'status',
@@ -181,7 +182,7 @@ export class AuthService {
     }
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
-      select: ['id', 'email', 'role'],
+      select: ['id', 'email', 'username', 'role'],
       relations: ['playerProfile', 'scoutProfile'],
     });
     if (!user || user.role !== payload.role) {
@@ -204,7 +205,15 @@ export class AuthService {
   async getMe(userId: string): Promise<MeResponseDto> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'role', 'status', 'lastActive', 'createdAt'],
+      select: [
+        'id',
+        'email',
+        'username',
+        'role',
+        'status',
+        'lastActive',
+        'createdAt',
+      ],
       relations: ['playerProfile', 'scoutProfile'],
     });
     if (!user) {
@@ -223,8 +232,9 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      username: user.username,
       role: user.role,
-      name: name || user.email,
+      name: name || user.username || user.email,
       status: user.status,
       lastActive: user.lastActive?.toISOString(),
       createdAt: user.createdAt.toISOString(),
@@ -445,6 +455,7 @@ export class AuthService {
       select: [
         'id',
         'email',
+        'username',
         'role',
         'status',
         'twoFactorEnabled',
@@ -702,7 +713,7 @@ export class AuthService {
   }
 
   private issueTokens(
-    user: Pick<User, 'id' | 'email' | 'role'>,
+    user: Pick<User, 'id' | 'email' | 'role' | 'username'>,
   ): TokenResponseDto {
     const payload: JwtPayload = {
       sub: user.id,
@@ -745,7 +756,7 @@ export class AuthService {
   }
 
   private issueTwoFactorToken(
-    user: Pick<User, 'id' | 'email' | 'role'>,
+    user: Pick<User, 'id' | 'email' | 'role' | 'username'>,
   ): string {
     const secret = this.configService.get<string>('jwt.secret');
     if (!secret) {
@@ -773,7 +784,7 @@ export class AuthService {
   }
 
   private toAuthResponse(
-    user: Pick<User, 'id' | 'email' | 'role'>,
+    user: Pick<User, 'id' | 'email' | 'role' | 'username'>,
     tokens: TokenResponseDto,
     name: string,
   ): AuthResponseDto {
@@ -781,8 +792,9 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
         role: user.role,
-        name: name || user.email,
+        name: name || user.username || user.email,
       },
       token: tokens.accessToken,
       refreshToken: tokens.refreshToken,

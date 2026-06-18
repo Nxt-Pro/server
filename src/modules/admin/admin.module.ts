@@ -6,6 +6,7 @@ import { AdminGuard } from './guards';
 import {
   AdminAnalyticsService,
   AdminAuditService,
+  AdminManagementService,
   AdminModerationService,
   AdminVerificationService,
 } from './services';
@@ -26,12 +27,14 @@ import { RepositoriesModule } from '@/database/repositories.module';
     AdminVerificationService,
     AdminAnalyticsService,
     AdminAuditService,
+    AdminManagementService,
   ],
   exports: [
     AdminModerationService,
     AdminVerificationService,
     AdminAnalyticsService,
     AdminAuditService,
+    AdminManagementService,
   ],
 })
 export class AdminModule {}
