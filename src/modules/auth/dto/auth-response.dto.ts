@@ -5,6 +5,7 @@ export class AuthResponseDto {
     username?: string | null;
     role: string;
     name: string;
+    twoFactorEnabled?: boolean;
   };
   token: string;
   refreshToken?: string;

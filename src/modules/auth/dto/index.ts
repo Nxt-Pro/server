@@ -8,6 +8,7 @@ export * from './reset-password.dto';
 export * from './register.dto';
 export * from './refresh.dto';
 export * from './token-response.dto';
+export * from './two-fa-confirm.dto';
 export * from './two-fa-enable.dto';
 export * from './two-fa-verify.dto';
 export * from './two-fa-setup-response.dto';

@@ -21,16 +21,41 @@ import type { RegisterDto } from './dto/register.dto';
 import type { TokenResponseDto } from './dto/token-response.dto';
 
 import type { JwtPayload } from '@/common/interfaces';
-import { PlayerProfile, ScoutProfile, User } from '@/database/entities';
+import {
+  Achievement,
+  Attachment,
+  Bookmark,
+  CareerTimeline,
+  Comment,
+  Favorite,
+  Like,
+  Notification,
+  PlayerProfile,
+  PlayerStats,
+  Post,
+  ScoutProfile,
+  User,
+} from '@/database/entities';
 import { MailService } from '@/integrations/mail/mail.service';
 
 const SALT_ROUNDS = 10;
+const TOTP_WINDOW = 2;
 
 @Injectable()
 export class AuthService {
   private readonly userRepository: Repository<User>;
   private readonly playerProfileRepository: Repository<PlayerProfile>;
   private readonly scoutProfileRepository: Repository<ScoutProfile>;
+  private readonly postRepository: Repository<Post>;
+  private readonly attachmentRepository: Repository<Attachment>;
+  private readonly commentRepository: Repository<Comment>;
+  private readonly likeRepository: Repository<Like>;
+  private readonly bookmarkRepository: Repository<Bookmark>;
+  private readonly favoriteRepository: Repository<Favorite>;
+  private readonly notificationRepository: Repository<Notification>;
+  private readonly playerStatsRepository: Repository<PlayerStats>;
+  private readonly careerTimelineRepository: Repository<CareerTimeline>;
+  private readonly achievementRepository: Repository<Achievement>;
   private readonly jwtService: JwtService;
   private readonly configService: ConfigService;
   private readonly mailService: MailService;
@@ -42,6 +67,26 @@ export class AuthService {
     playerProfileRepository: Repository<PlayerProfile>,
     @InjectRepository(ScoutProfile)
     scoutProfileRepository: Repository<ScoutProfile>,
+    @InjectRepository(Post)
+    postRepository: Repository<Post>,
+    @InjectRepository(Attachment)
+    attachmentRepository: Repository<Attachment>,
+    @InjectRepository(Comment)
+    commentRepository: Repository<Comment>,
+    @InjectRepository(Like)
+    likeRepository: Repository<Like>,
+    @InjectRepository(Bookmark)
+    bookmarkRepository: Repository<Bookmark>,
+    @InjectRepository(Favorite)
+    favoriteRepository: Repository<Favorite>,
+    @InjectRepository(Notification)
+    notificationRepository: Repository<Notification>,
+    @InjectRepository(PlayerStats)
+    playerStatsRepository: Repository<PlayerStats>,
+    @InjectRepository(CareerTimeline)
+    careerTimelineRepository: Repository<CareerTimeline>,
+    @InjectRepository(Achievement)
+    achievementRepository: Repository<Achievement>,
     jwtService: JwtService,
     configService: ConfigService,
     mailService: MailService,
@@ -49,6 +94,16 @@ export class AuthService {
     this.userRepository = userRepository;
     this.playerProfileRepository = playerProfileRepository;
     this.scoutProfileRepository = scoutProfileRepository;
+    this.postRepository = postRepository;
+    this.attachmentRepository = attachmentRepository;
+    this.commentRepository = commentRepository;
+    this.likeRepository = likeRepository;
+    this.bookmarkRepository = bookmarkRepository;
+    this.favoriteRepository = favoriteRepository;
+    this.notificationRepository = notificationRepository;
+    this.playerStatsRepository = playerStatsRepository;
+    this.careerTimelineRepository = careerTimelineRepository;
+    this.achievementRepository = achievementRepository;
     this.jwtService = jwtService;
     this.configService = configService;
     this.mailService = mailService;
@@ -182,7 +237,7 @@ export class AuthService {
     }
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
-      select: ['id', 'email', 'username', 'role'],
+      select: ['id', 'email', 'username', 'role', 'twoFactorEnabled'],
       relations: ['playerProfile', 'scoutProfile'],
     });
     if (!user || user.role !== payload.role) {
@@ -211,6 +266,7 @@ export class AuthService {
         'username',
         'role',
         'status',
+        'twoFactorEnabled',
         'lastActive',
         'createdAt',
       ],
@@ -236,8 +292,221 @@ export class AuthService {
       role: user.role,
       name: name || user.username || user.email,
       status: user.status,
+      twoFactorEnabled: user.twoFactorEnabled,
       lastActive: user.lastActive?.toISOString(),
       createdAt: user.createdAt.toISOString(),
+    };
+  }
+
+  async exportAccountData(userId: string): Promise<Record<string, unknown>> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: [
+        'id',
+        'email',
+        'username',
+        'role',
+        'status',
+        'phone',
+        'twoFactorEnabled',
+        'lastActive',
+        'createdAt',
+        'updatedAt',
+      ],
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const [
+      playerProfile,
+      scoutProfile,
+      posts,
+      comments,
+      likes,
+      bookmarks,
+      favorites,
+      notifications,
+      playerStats,
+      careerTimeline,
+      achievements,
+    ] = await Promise.all([
+      this.playerProfileRepository.findOne({ where: { userId } }),
+      this.scoutProfileRepository.findOne({ where: { userId } }),
+      this.postRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      }),
+      this.commentRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      }),
+      this.likeRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      }),
+      this.bookmarkRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      }),
+      this.favoriteRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      }),
+      this.notificationRepository.find({
+        where: { user: { id: userId } },
+        order: { createdAt: 'DESC' },
+      }),
+      this.playerStatsRepository.find({
+        where: { playerId: userId },
+        order: { seasonYear: 'DESC' },
+      }),
+      this.careerTimelineRepository.find({
+        where: { playerId: userId },
+        order: { startDate: 'DESC' },
+      }),
+      this.achievementRepository.find({
+        where: { playerId: userId },
+        order: { year: 'DESC' },
+      }),
+    ]);
+
+    const attachments =
+      posts.length === 0
+        ? []
+        : await this.attachmentRepository
+            .createQueryBuilder('attachment')
+            .where('attachment.post_id IN (:...postIds)', {
+              postIds: posts.map(post => post.id),
+            })
+            .orderBy('attachment.post_id', 'ASC')
+            .addOrderBy('attachment.position', 'ASC')
+            .getMany();
+
+    return {
+      exportedAt: new Date().toISOString(),
+      schemaVersion: 1,
+      account: {
+        id: user.id,
+        email: user.email,
+        username: user.username ?? null,
+        role: user.role,
+        status: user.status,
+        phone: user.phone ?? null,
+        twoFactorEnabled: user.twoFactorEnabled,
+        lastActive: user.lastActive?.toISOString() ?? null,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+      },
+      profiles: {
+        player: playerProfile
+          ? this.toExportPlayerProfile(playerProfile)
+          : null,
+        scout: scoutProfile ? this.toExportScoutProfile(scoutProfile) : null,
+      },
+      playerData: {
+        stats: playerStats.map(stats => ({
+          id: stats.id,
+          seasonYear: stats.seasonYear,
+          goals: stats.goals,
+          assists: stats.assists,
+          matchesPlayed: stats.matchesPlayed,
+          yellowCards: stats.yellowCards,
+          redCards: stats.redCards,
+          cleanSheets: stats.cleanSheets,
+          avgRating: stats.avgRating != null ? Number(stats.avgRating) : null,
+          createdAt: stats.createdAt.toISOString(),
+          updatedAt: stats.updatedAt.toISOString(),
+        })),
+        careerTimeline: careerTimeline.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description ?? null,
+          startDate: this.formatDateOnly(item.startDate),
+          endDate: item.endDate ? this.formatDateOnly(item.endDate) : null,
+          isCurrent: item.isCurrent,
+          evidenceUrl: item.evidenceUrl ?? null,
+          createdAt: item.createdAt.toISOString(),
+          updatedAt: item.updatedAt.toISOString(),
+        })),
+        achievements: achievements.map(achievement => ({
+          id: achievement.id,
+          title: achievement.title,
+          description: achievement.description,
+          year: achievement.year,
+          competitionLevel: achievement.competitionLevel,
+          verified: achievement.verified,
+          evidenceUrl: achievement.evidenceUrl ?? null,
+          createdAt: achievement.createdAt.toISOString(),
+          updatedAt: achievement.updatedAt.toISOString(),
+        })),
+      },
+      activity: {
+        posts: posts.map(post => ({
+          id: post.id,
+          caption: post.caption ?? null,
+          isHighlight: post.isHighlight,
+          engagementScore: post.engagementScore,
+          likesCount: post.likesCount,
+          commentsCount: post.commentsCount,
+          viewsCount: post.viewsCount,
+          sharesCount: post.sharesCount,
+          visibility: post.visibility,
+          isReported: post.isReported,
+          createdAt: post.createdAt.toISOString(),
+          updatedAt: post.updatedAt.toISOString(),
+          attachments: attachments
+            .filter(attachment => attachment.postId === post.id)
+            .map(attachment => ({
+              id: attachment.id,
+              contentType: attachment.contentType,
+              url: attachment.url,
+              position: attachment.position,
+              createdAt: attachment.createdAt.toISOString(),
+              updatedAt: attachment.updatedAt.toISOString(),
+            })),
+        })),
+        comments: comments.map(comment => ({
+          id: comment.id,
+          postId: comment.postId,
+          parentComment: comment.parentComment ?? null,
+          content: comment.content,
+          isReported: comment.isReported,
+          createdAt: comment.createdAt.toISOString(),
+          updatedAt: comment.updatedAt.toISOString(),
+        })),
+        likes: likes.map(like => ({
+          id: like.id,
+          postId: like.postId,
+          createdAt: like.createdAt.toISOString(),
+          updatedAt: like.updatedAt.toISOString(),
+        })),
+        bookmarks: bookmarks.map(bookmark => ({
+          id: bookmark.id,
+          bookmarkableId: bookmark.bookmarkableId,
+          bookmarkableType: bookmark.bookmarkableType,
+          createdAt: bookmark.createdAt.toISOString(),
+          updatedAt: bookmark.updatedAt.toISOString(),
+        })),
+        favorites: favorites.map(favorite => ({
+          id: favorite.id,
+          favoritedId: favorite.favoritedId,
+          favoritedType: favorite.favoritedType,
+          createdAt: favorite.createdAt.toISOString(),
+          updatedAt: favorite.updatedAt.toISOString(),
+        })),
+        notifications: notifications.map(notification => ({
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          referenceId: notification.referenceId,
+          readAt: notification.readAt?.toISOString() ?? null,
+          createdAt: notification.createdAt.toISOString(),
+          updatedAt: notification.updatedAt.toISOString(),
+        })),
+      },
     };
   }
 
@@ -333,6 +602,12 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    if (enabled) {
+      throw new BadRequestException(
+        'Two-factor authentication must be enabled by confirming a verification code',
+      );
+    }
+
     user.twoFactorEnabled = enabled;
 
     if (!enabled) {
@@ -347,11 +622,24 @@ export class AuthService {
   async startTwoFactorSetup(userId: string): Promise<TwoFaSetupResponseDto> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'twoFactorSecret'],
+      select: [
+        'id',
+        'email',
+        'twoFactorEnabled',
+        'twoFactorSecret',
+        'twoFactorCode',
+        'twoFactorCodeExpiresAt',
+      ],
     });
 
     if (!user) {
       throw new UnauthorizedException('User not found');
+    }
+
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException(
+        'Two-factor authentication is already enabled',
+      );
     }
 
     const generatedSecret = (
@@ -363,9 +651,11 @@ export class AuthService {
       name: `NxtPro (${user.email})`,
     });
 
-    const secret = user.twoFactorSecret ?? generatedSecret.base32;
+    const secret = generatedSecret.base32;
 
     user.twoFactorSecret = secret;
+    user.twoFactorCode = null;
+    user.twoFactorCodeExpiresAt = null;
     await this.userRepository.save(user);
 
     const otpauthUrl = (
@@ -393,6 +683,12 @@ export class AuthService {
   }
 
   async confirmTwoFactorSetup(userId: string, code: string): Promise<void> {
+    const normalizedCode = this.normalizeTotpCode(code);
+
+    if (!normalizedCode) {
+      throw new BadRequestException('Verification code is required');
+    }
+
     const user = await this.userRepository.findOne({
       where: { id: userId },
       select: ['id', 'email', 'twoFactorSecret', 'twoFactorEnabled'],
@@ -413,8 +709,8 @@ export class AuthService {
     ).totp.verify({
       secret: user.twoFactorSecret,
       encoding: 'base32',
-      token: code,
-      window: 1,
+      token: normalizedCode,
+      window: TOTP_WINDOW,
     });
 
     if (!verified) {
@@ -468,6 +764,12 @@ export class AuthService {
       throw new UnauthorizedException('User not found or 2FA not enabled');
     }
 
+    const normalizedCode = this.normalizeTotpCode(code);
+
+    if (!normalizedCode) {
+      throw new BadRequestException('Verification code is required');
+    }
+
     const verified = (
       speakeasy as unknown as {
         totp: { verify: (options: unknown) => boolean };
@@ -475,8 +777,8 @@ export class AuthService {
     ).totp.verify({
       secret: user.twoFactorSecret,
       encoding: 'base32',
-      token: code,
-      window: 1,
+      token: normalizedCode,
+      window: TOTP_WINDOW,
     });
 
     if (!verified) {
@@ -784,7 +1086,8 @@ export class AuthService {
   }
 
   private toAuthResponse(
-    user: Pick<User, 'id' | 'email' | 'role' | 'username'>,
+    user: Pick<User, 'id' | 'email' | 'role' | 'username'> &
+      Partial<Pick<User, 'twoFactorEnabled'>>,
     tokens: TokenResponseDto,
     name: string,
   ): AuthResponseDto {
@@ -795,6 +1098,7 @@ export class AuthService {
         username: user.username,
         role: user.role,
         name: name || user.username || user.email,
+        twoFactorEnabled: Boolean(user.twoFactorEnabled),
       },
       token: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -802,9 +1106,88 @@ export class AuthService {
     };
   }
 
+  private toExportPlayerProfile(
+    profile: PlayerProfile,
+  ): Record<string, unknown> {
+    return {
+      userId: profile.userId,
+      fullName: profile.fullName,
+      dateOfBirth: this.formatDateOnly(profile.dateOfBirth),
+      nationality: profile.nationality ?? null,
+      position: profile.position ?? null,
+      secondaryPositions: profile.secondaryPositions ?? [],
+      preferredFoot: profile.preferredFoot ?? null,
+      heightCm: profile.heightCm != null ? Number(profile.heightCm) : null,
+      weightKg: profile.weightKg != null ? Number(profile.weightKg) : null,
+      city: profile.city ?? null,
+      country: profile.country ?? null,
+      clubName: profile.clubName ?? null,
+      availabilityStatus: profile.availabilityStatus ?? null,
+      bio: profile.bio ?? null,
+      profilePictureUrl: profile.profilePictureUrl ?? null,
+      coverImageUrl: profile.coverImageUrl ?? null,
+      aiScore: profile.aiScore != null ? Number(profile.aiScore) : null,
+      skillScores: profile.skillScores ?? {},
+      totalPosts: profile.totalPosts,
+      totalLikes: profile.totalLikes,
+      totalViews: profile.totalViews,
+      isFeatured: profile.isFeatured,
+      featuredUntil: profile.featuredUntil?.toISOString() ?? null,
+      isVerified: profile.isVerified,
+      basicVerifiedAt: profile.basicVerifiedAt?.toISOString() ?? null,
+      clubVerifiedAt: profile.clubVerifiedAt?.toISOString() ?? null,
+      performanceVerifiedAt:
+        profile.performanceVerifiedAt?.toISOString() ?? null,
+      profileCompleteness:
+        profile.profileCompleteness != null
+          ? Number(profile.profileCompleteness)
+          : 0,
+      createdAt: profile.createdAt.toISOString(),
+      updatedAt: profile.updatedAt.toISOString(),
+    };
+  }
+
+  private toExportScoutProfile(profile: ScoutProfile): Record<string, unknown> {
+    return {
+      userId: profile.userId,
+      fullName: profile.fullName,
+      organization: profile.organization,
+      organizationType: profile.organizationType,
+      licenseNumber: profile.licenseNumber ?? null,
+      yearsExperience: profile.yearsExperience ?? null,
+      scoutingPositions: profile.scoutingPositions ?? [],
+      countriesCovered: profile.countriesCovered ?? [],
+      bio: profile.bio ?? null,
+      profilePictureUrl: profile.profilePictureUrl ?? null,
+      coverImageUrl: profile.coverImageUrl ?? null,
+      totalNotes: profile.totalNotes,
+      verificationStatus: profile.verificationStatus,
+      profileCompleteness:
+        profile.profileCompleteness != null
+          ? Number(profile.profileCompleteness)
+          : 0,
+      createdAt: profile.createdAt.toISOString(),
+      updatedAt: profile.updatedAt.toISOString(),
+    };
+  }
+
+  private formatDateOnly(value: Date | string): string {
+    return value instanceof Date
+      ? value.toISOString().slice(0, 10)
+      : String(value);
+  }
+
   private generateTwoFactorCode(): string {
     const code = Math.floor(100000 + Math.random() * 900000);
     return String(code);
+  }
+
+  private normalizeTotpCode(code: string): string {
+    const normalized = String(code ?? '').replace(/[\s-]/g, '');
+    if (!/^\d{6}$/.test(normalized)) {
+      return '';
+    }
+    return normalized;
   }
 
   private parseExpiryToSeconds(expiresIn: string): number {

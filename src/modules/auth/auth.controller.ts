@@ -8,6 +8,7 @@ import {
   RefreshDto,
   RegisterDto,
   ResetPasswordDto,
+  TwoFaConfirmDto,
   TwoFaEnableDto,
   TwoFaVerifyDto,
   TwoFaSetupResponseDto,
@@ -54,6 +55,11 @@ export class AuthController {
   @Get('me')
   async me(@CurrentUser() user: JwtPayload) {
     return this.authService.getMe(user.sub);
+  }
+
+  @Get('export')
+  async exportAccountData(@CurrentUser('sub') userId: string) {
+    return this.authService.exportAccountData(userId);
   }
 
   @Patch('password')
@@ -104,9 +110,9 @@ export class AuthController {
   @Patch('2fa/confirm')
   async confirmTwoFactorSetup(
     @CurrentUser('sub') userId: string,
-    @Body('code') code: string,
+    @Body() dto: TwoFaConfirmDto,
   ) {
-    await this.authService.confirmTwoFactorSetup(userId, code);
+    await this.authService.confirmTwoFactorSetup(userId, dto.code);
     return { message: 'Two-factor authentication has been enabled' };
   }
 

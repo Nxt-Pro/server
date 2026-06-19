@@ -5,6 +5,7 @@ export class MeResponseDto {
   role: string;
   name: string;
   status: string;
+  twoFactorEnabled: boolean;
   lastActive?: string;
   createdAt: string;
 }

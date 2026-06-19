@@ -6,12 +6,40 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { PlayerProfile, ScoutProfile, User } from '@/database/entities';
+import {
+  Achievement,
+  Attachment,
+  Bookmark,
+  CareerTimeline,
+  Comment,
+  Favorite,
+  Like,
+  Notification,
+  PlayerProfile,
+  PlayerStats,
+  Post,
+  ScoutProfile,
+  User,
+} from '@/database/entities';
 import { MailModule } from '@/integrations/mail/mail.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, PlayerProfile, ScoutProfile]),
+    TypeOrmModule.forFeature([
+      User,
+      PlayerProfile,
+      ScoutProfile,
+      Post,
+      Attachment,
+      Comment,
+      Like,
+      Bookmark,
+      Favorite,
+      Notification,
+      PlayerStats,
+      CareerTimeline,
+      Achievement,
+    ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     MailModule,
     JwtModule.registerAsync({
