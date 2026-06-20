@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import 'reflect-metadata';
@@ -17,12 +18,14 @@ describe('NotificationsService', () => {
     save: jest.Mock;
     find: jest.Mock;
     update: jest.Mock;
+    count: jest.Mock;
   };
   let userRepo: {
     findOne: jest.Mock;
     save: jest.Mock;
   };
   let firebaseService: { sendMulticastNotification: jest.Mock };
+  let eventEmitter: { emit: jest.Mock };
 
   beforeEach(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -34,6 +37,7 @@ describe('NotificationsService', () => {
       save: jest.fn(),
       find: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     };
 
     userRepo = {
@@ -43,6 +47,10 @@ describe('NotificationsService', () => {
 
     firebaseService = {
       sendMulticastNotification: jest.fn(),
+    };
+
+    eventEmitter = {
+      emit: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -59,6 +67,10 @@ describe('NotificationsService', () => {
         {
           provide: FirebaseService,
           useValue: firebaseService,
+        },
+        {
+          provide: EventEmitter2,
+          useValue: eventEmitter,
         },
       ],
     }).compile();
@@ -80,7 +92,18 @@ describe('NotificationsService', () => {
     };
 
     const created = { created: true };
-    const saved = { id: 'notif_1' };
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    const updatedAt = new Date('2026-01-01T00:01:00.000Z');
+    const saved = {
+      id: 'notif_1',
+      title: payload.title,
+      message: payload.message,
+      type: payload.type,
+      referenceId: payload.referenceId,
+      readAt: null,
+      createdAt,
+      updatedAt,
+    };
     const user = { id: 'user_1', fcmTokens: ['token_1'] };
 
     notificationRepo.create.mockReturnValue(created);
@@ -98,6 +121,19 @@ describe('NotificationsService', () => {
     });
 
     expect(notificationRepo.save).toHaveBeenCalledWith(created);
+    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.created', {
+      userId: payload.userId,
+      notification: {
+        id: saved.id,
+        title: saved.title,
+        message: saved.message,
+        type: saved.type,
+        referenceId: saved.referenceId,
+        readAt: null,
+        createdAt: createdAt.toISOString(),
+        updatedAt: updatedAt.toISOString(),
+      },
+    });
     expect(userRepo.findOne).toHaveBeenCalledWith({
       where: { id: payload.userId },
       select: ['fcmTokens'],
@@ -163,6 +199,21 @@ describe('NotificationsService', () => {
     expect(whereArg.readAt.type).toBe('isNull');
 
     expect(updateArg.readAt).toBeInstanceOf(Date);
+  });
+
+  it('getUnreadCount counts unread notifications for a user', async () => {
+    notificationRepo.count.mockResolvedValue(4);
+
+    await expect(service.getUnreadCount('user_1')).resolves.toBe(4);
+
+    const [countArg] = (notificationRepo.count.mock.calls[0] ??
+      []) as unknown as [
+      { where: { user: { id: string }; readAt: FindOperator<unknown> } },
+    ];
+
+    expect(countArg.where.user).toEqual({ id: 'user_1' });
+    expect(countArg.where.readAt).toBeInstanceOf(FindOperator);
+    expect(countArg.where.readAt.type).toBe('isNull');
   });
 
   it('handleNotificationCreate swallows errors (logs) and does not throw', async () => {

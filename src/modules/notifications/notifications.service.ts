@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { FirebaseService } from '@/integrations/firebase/firebase.service';
@@ -20,6 +20,20 @@ export interface CreateNotificationEvent {
   referenceId?: string;
 }
 
+export interface NotificationCreatedEvent {
+  userId: string;
+  notification: {
+    id: string;
+    title: string;
+    message: string;
+    type: CreateNotificationEvent['type'];
+    referenceId: string | null;
+    readAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -30,6 +44,7 @@ export class NotificationsService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly firebaseService: FirebaseService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -55,7 +70,21 @@ export class NotificationsService {
 
       const savedNotification = await this.notificationRepo.save(notification);
 
-      // 2. Send Real-Time Update (Via Firebase)
+      this.eventEmitter.emit('notification.created', {
+        userId: payload.userId,
+        notification: {
+          id: savedNotification.id,
+          title: savedNotification.title,
+          message: savedNotification.message,
+          type: savedNotification.type,
+          referenceId: savedNotification.referenceId,
+          readAt: savedNotification.readAt?.toISOString() ?? null,
+          createdAt: savedNotification.createdAt.toISOString(),
+          updatedAt: savedNotification.updatedAt.toISOString(),
+        },
+      } satisfies NotificationCreatedEvent);
+
+      // 2. Send Push Update (Via Firebase)
       const user = await this.userRepo.findOne({
         where: { id: payload.userId },
         select: ['fcmTokens'],
@@ -105,6 +134,12 @@ export class NotificationsService {
       { id: notificationId, user: { id: userId } },
       { readAt: new Date() },
     );
+  };
+
+  getUnreadCount = async (userId: string) => {
+    return this.notificationRepo.count({
+      where: { user: { id: userId }, readAt: IsNull() },
+    });
   };
 
   markAllAsRead = async (userId: string) => {

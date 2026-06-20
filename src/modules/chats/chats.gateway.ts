@@ -53,6 +53,13 @@ interface ChatRequestedPayload {
   chatId: string;
   scoutId: string;
   playerId: string;
+  chat?: unknown;
+  message?: string;
+}
+
+interface NotificationCreatedPayload {
+  userId: string;
+  notification: unknown;
 }
 
 type ChatRoomBody = string | { chatId?: string };
@@ -245,12 +252,20 @@ export class ChatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   };
 
   private emitChatRequested = (payload: ChatRequestedPayload) => {
-    const { chatId, scoutId, playerId } = payload;
+    const { chatId, scoutId, playerId, chat } = payload;
     this.server.to(this.userRoom(scoutId)).emit('chat.requested', {
       chatId,
       playerId,
     });
-    this.server.to(this.userRoom(scoutId)).emit('chat:updated', { chatId });
+    this.server
+      .to(this.userRoom(scoutId))
+      .emit('chat:updated', { chatId, chat });
+  };
+
+  private emitNotificationCreated = (payload: NotificationCreatedPayload) => {
+    this.server.to(this.userRoom(payload.userId)).emit('notification:new', {
+      notification: payload.notification,
+    });
   };
 
   @OnEvent('chat.message')
@@ -271,5 +286,10 @@ export class ChatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @OnEvent('chat.requested')
   onChatRequested(payload: ChatRequestedPayload) {
     this.emitChatRequested(payload);
+  }
+
+  @OnEvent('notification.created')
+  onNotificationCreated(payload: NotificationCreatedPayload) {
+    this.emitNotificationCreated(payload);
   }
 }

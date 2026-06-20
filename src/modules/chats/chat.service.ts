@@ -74,7 +74,7 @@ export class ChatService {
         scout: { id: scoutId },
         player: { id: playerId },
       },
-      relations: ['participants', 'scout', 'player'],
+      relations: ['participants', 'participants.user', 'scout', 'player'],
     });
 
     if (existing) {
@@ -82,14 +82,18 @@ export class ChatService {
     }
 
     const status = isScoutInitiator ? 'active' : 'pending';
+    const initialMessage = !isScoutInitiator
+      ? dto.initialMessage?.trim().slice(0, 1000)
+      : undefined;
+    const requestedAt = new Date();
 
     const chat = this.chatRepository.create({
       status,
       scout: { id: scoutId } as User,
       player: { id: playerId } as User,
-      unreadCount: 0,
-      lastMessageAt: null,
-      lastMessagePreview: null,
+      unreadCount: initialMessage ? 1 : 0,
+      lastMessageAt: initialMessage ? requestedAt : null,
+      lastMessagePreview: initialMessage ?? null,
     });
 
     const savedChat = await this.chatRepository.save(chat);
@@ -98,7 +102,7 @@ export class ChatService {
       this.participantRepository.create({
         chat: savedChat,
         user: { id: scoutId } as User,
-        unreadCount: 0,
+        unreadCount: initialMessage ? 1 : 0,
         status: status === 'active' ? 'active' : 'pending',
       }),
       this.participantRepository.create({
@@ -111,24 +115,51 @@ export class ChatService {
 
     await this.participantRepository.save(participants);
 
+    if (initialMessage) {
+      await this.messageRepository.save(
+        this.messageRepository.create({
+          chat: savedChat,
+          sender: { id: initiatorId } as User,
+          content: initialMessage,
+          messageType: 'text',
+          attachmentUrl: null,
+          readAt: null,
+        }),
+      );
+    }
+
+    const createdChat = await this.chatRepository.findOneOrFail({
+      where: { id: savedChat.id },
+      relations: ['participants', 'participants.user', 'scout', 'player'],
+    });
+
     if (!isScoutInitiator) {
       this.eventEmitter.emit('chat.requested', {
         scoutId,
         playerId,
-        chatId: savedChat.id,
+        chatId: createdChat.id,
+        chat: createdChat,
+        message: initialMessage,
+      });
+
+      this.eventEmitter.emit('notification.create', {
+        userId: scoutId,
+        title: 'New chat request',
+        message: initialMessage
+          ? `${this.getDisplayName(initiator)}: ${initialMessage}`
+          : `${this.getDisplayName(initiator)} requested to chat with you.`,
+        type: 'message',
+        referenceId: createdChat.id,
       });
     }
 
-    return this.chatRepository.findOneOrFail({
-      where: { id: savedChat.id },
-      relations: ['participants', 'scout', 'player'],
-    });
+    return createdChat;
   };
 
   acceptChat = async (chatId: string, scoutId: string): Promise<Chat> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['participants', 'scout', 'player'],
+      relations: ['participants', 'participants.user', 'scout', 'player'],
     });
 
     if (!chat) {
@@ -161,7 +192,7 @@ export class ChatService {
 
     return this.chatRepository.findOneOrFail({
       where: { id: chatId },
-      relations: ['participants', 'scout', 'player'],
+      relations: ['participants', 'participants.user', 'scout', 'player'],
     });
   };
 
@@ -182,7 +213,7 @@ export class ChatService {
   getChatById = async (chatId: string, userId: string): Promise<Chat> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['participants', 'scout', 'player'],
+      relations: ['participants', 'participants.user', 'scout', 'player'],
     });
 
     if (!chat) {
@@ -296,8 +327,22 @@ export class ChatService {
       chat: updatedChat,
     });
 
+    if (recipientId) {
+      this.eventEmitter.emit('notification.create', {
+        userId: recipientId,
+        title: 'New message',
+        message: `${this.getDisplayName(savedMessageWithSender.sender)}: ${dto.content}`,
+        type: 'message',
+        referenceId: chatId,
+      });
+    }
+
     return messageWithClientId;
   };
+
+  private getDisplayName(user?: User | null): string {
+    return user?.username || user?.email || 'Someone';
+  }
 
   markChatRead = async (chatId: string, userId: string): Promise<void> => {
     await this.getChatById(chatId, userId);

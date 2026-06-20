@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class StartChatDto {
   @ValidateIf((o: StartChatDto) => !o.scoutId)
@@ -11,4 +17,9 @@ export class StartChatDto {
   @IsNotEmpty()
   @IsOptional()
   scoutId?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(1000)
+  initialMessage?: string;
 }

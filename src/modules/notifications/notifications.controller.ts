@@ -60,6 +60,12 @@ export class NotificationsController {
     );
   }
 
+  @Get('unread-count')
+  async getUnreadCount(@CurrentUser('sub') userId: string) {
+    if (!userId) throw HttpError.unauthorized();
+    return { count: await this.notificationsService.getUnreadCount(userId) };
+  }
+
   @Patch('read-all')
   async markAllAsRead(@CurrentUser('sub') userId: string) {
     if (!userId) throw HttpError.unauthorized();
