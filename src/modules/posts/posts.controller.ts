@@ -20,7 +20,7 @@ import {
 } from './dto';
 import { PostsService } from './posts.service';
 import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { CurrentUser, Public } from '@/common/decorators';
 
 @Controller('post')
 export class PostsController {
@@ -94,30 +94,33 @@ export class PostsController {
   }
 
   @Get('fyp')
+  @Public()
   getFyp(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: JwtPayload | undefined,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getFypFeed(user.sub, page, limit);
+    return this.postsService.getFypFeed(user?.sub, page, limit);
   }
 
   @Get('highlights')
+  @Public()
   getHighlights(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: JwtPayload | undefined,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getHighlightsFeed(user.sub, page, limit);
+    return this.postsService.getHighlightsFeed(user?.sub, page, limit);
   }
 
   @Get('trending')
+  @Public()
   getTrending(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: JwtPayload | undefined,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getTrendingFeed(user.sub, page, limit);
+    return this.postsService.getTrendingFeed(user?.sub, page, limit);
   }
 
   @Get('bookmarks')
@@ -139,8 +142,12 @@ export class PostsController {
   }
 
   @Get(':id')
-  getPost(@Param('id') postId: string, @CurrentUser() user: JwtPayload) {
-    return this.postsService.getPost(postId, user.sub);
+  @Public()
+  getPost(
+    @Param('id') postId: string,
+    @CurrentUser() user: JwtPayload | undefined,
+  ) {
+    return this.postsService.getPost(postId, user?.sub);
   }
 
   @Post(':id/like')
@@ -154,13 +161,14 @@ export class PostsController {
   }
 
   @Get(':id/comments')
+  @Public()
   getComments(
     @Param('id') postId: string,
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: JwtPayload | undefined,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getComments(postId, user.sub, page, limit);
+    return this.postsService.getComments(postId, user?.sub, page, limit);
   }
 
   @Post(':id/comment')
@@ -193,13 +201,14 @@ export class PostsController {
   }
 
   @Get()
+  @Public()
   listPosts(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: JwtPayload | undefined,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('mine') mine?: string,
   ) {
-    const onlyMine = mine !== 'false' && mine !== '0';
-    return this.postsService.listPosts(user.sub, page, limit, onlyMine);
+    const onlyMine = Boolean(user?.sub) && mine !== 'false' && mine !== '0';
+    return this.postsService.listPosts(user?.sub, page, limit, onlyMine);
   }
 }

@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { UpdatePlayerProfileDto, UpdatePlayerSkillScoreDto } from './dto';
 import { ProfilesService } from './profiles.service';
 import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { CurrentUser, Public } from '@/common/decorators';
 
 @Controller('player/profile')
 export class PlayerProfileController {
@@ -13,6 +13,7 @@ export class PlayerProfileController {
   }
 
   @Get(':id')
+  @Public()
   getProfile(@Param('id') id: string) {
     return this.profilesService.getPlayerProfile(id);
   }

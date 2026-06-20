@@ -274,11 +274,11 @@ export class PostsService {
   }
 
   async getFypFeed(
-    userId: string,
+    userId: string | undefined,
     page: number,
     limit: number,
   ): Promise<PaginatedPostsDto> {
-    const hiddenUserIds = await this.getHiddenUserIds(userId);
+    const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
     const qb = this.postRepository
       .createQueryBuilder('p')
@@ -311,12 +311,12 @@ export class PostsService {
   }
 
   async listPosts(
-    userId: string,
+    userId: string | undefined,
     page: number,
     limit: number,
     onlyMine = true,
   ): Promise<PaginatedPostsDto> {
-    const hiddenUserIds = await this.getHiddenUserIds(userId);
+    const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
     const qb = this.postRepository
       .createQueryBuilder('p')
@@ -327,8 +327,12 @@ export class PostsService {
       .leftJoinAndSelect('u.scoutProfile', 'usp')
       .orderBy('p.createdAt', 'DESC');
 
-    if (onlyMine) {
+    if (onlyMine && userId) {
       qb.where('p.userId = :userId', { userId });
+    } else if (!userId) {
+      qb.where('p.visibility = :publicVisibility', {
+        publicVisibility: 'public',
+      });
     } else {
       qb.where('(p.visibility = :publicVisibility OR p.userId = :userId)', {
         publicVisibility: 'public',
@@ -356,11 +360,11 @@ export class PostsService {
   }
 
   async getHighlightsFeed(
-    userId: string,
+    userId: string | undefined,
     page: number,
     limit: number,
   ): Promise<PaginatedPostsDto> {
-    const hiddenUserIds = await this.getHiddenUserIds(userId);
+    const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
     const qb = this.postRepository
       .createQueryBuilder('p')
@@ -393,11 +397,11 @@ export class PostsService {
   }
 
   async getTrendingFeed(
-    userId: string,
+    userId: string | undefined,
     page: number,
     limit: number,
   ): Promise<PaginatedPostsDto> {
-    const hiddenUserIds = await this.getHiddenUserIds(userId);
+    const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
     const qb = this.postRepository
       .createQueryBuilder('p')
@@ -441,7 +445,10 @@ export class PostsService {
     await this.postRepository.remove(post);
   }
 
-  async getPost(postId: string, userId: string): Promise<PostResponseDto> {
+  async getPost(
+    postId: string,
+    userId: string | undefined,
+  ): Promise<PostResponseDto> {
     const post = await this.postRepository.findOne({
       where: { id: postId },
       relations: [
@@ -547,7 +554,7 @@ export class PostsService {
 
   async getComments(
     postId: string,
-    userId: string,
+    userId: string | undefined,
     page: number,
     limit: number,
   ): Promise<PaginatedCommentsDto> {
@@ -830,7 +837,7 @@ export class PostsService {
 
   private async ensurePostVisible(
     postId: string,
-    userId: string,
+    userId: string | undefined,
   ): Promise<Post> {
     const post = await this.postRepository.findOne({ where: { id: postId } });
     if (!post) {
@@ -872,10 +879,19 @@ export class PostsService {
 
   private async toPostResponses(
     posts: (Post & { attachments?: (Attachment & { video?: Video })[] })[],
-    userId: string,
+    userId: string | undefined,
   ): Promise<PostResponseDto[]> {
     const postIds = posts.map(post => post.id);
     if (postIds.length === 0) return [];
+
+    if (!userId) {
+      return posts.map(post =>
+        this.toPostResponse(post, {
+          isLiked: false,
+          isBookmarked: false,
+        }),
+      );
+    }
 
     const [likes, bookmarks] = await Promise.all([
       this.likeRepository.find({
@@ -939,22 +955,30 @@ export class PostsService {
     if (!user) return null;
 
     if (user.playerProfile) {
+      const profilePictureUrl = user.playerProfile.profilePictureUrl ?? null;
       return {
         id: user.id,
         role: user.role,
         name: user.playerProfile.fullName,
-        profilePictureUrl: user.playerProfile.profilePictureUrl ?? null,
+        profilePictureUrl,
+        profile_picture_url: profilePictureUrl,
+        avatarUrl: profilePictureUrl,
+        avatar_url: profilePictureUrl,
         position: user.playerProfile.position ?? null,
         isVerified: user.playerProfile.isVerified,
       };
     }
 
     if (user.scoutProfile) {
+      const profilePictureUrl = user.scoutProfile.profilePictureUrl ?? null;
       return {
         id: user.id,
         role: user.role,
         name: user.scoutProfile.fullName,
-        profilePictureUrl: user.scoutProfile.profilePictureUrl ?? null,
+        profilePictureUrl,
+        profile_picture_url: profilePictureUrl,
+        avatarUrl: profilePictureUrl,
+        avatar_url: profilePictureUrl,
         position: user.scoutProfile.organization,
         isVerified: user.scoutProfile.verificationStatus === 'verified',
       };
@@ -965,6 +989,9 @@ export class PostsService {
       role: user.role,
       name: user.email,
       profilePictureUrl: null,
+      profile_picture_url: null,
+      avatarUrl: null,
+      avatar_url: null,
       position: null,
       isVerified: false,
     };

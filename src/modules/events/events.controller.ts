@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { CreateEventDto, EventQueryDto, UpdateEventDto } from './dtos';
 import { EventsService } from './events.service';
-import { CurrentUser } from '@/common/decorators';
+import { CurrentUser, Public } from '@/common/decorators';
 
 @Controller('events')
 export class EventsController {
@@ -25,16 +25,19 @@ export class EventsController {
   }
 
   @Get('ongoing')
+  @Public()
   async getOngoingEvents(@Query() query: EventQueryDto) {
     return this.eventsService.getOngoingEvents(query);
   }
 
   @Get()
+  @Public()
   async getEvents(@Query() query: EventQueryDto) {
     return this.eventsService.getEvents(query);
   }
 
   @Get(':id')
+  @Public()
   async getEventById(@Param('id') eventId: string) {
     return this.eventsService.getEventById(eventId);
   }

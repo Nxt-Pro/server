@@ -17,15 +17,26 @@ export class JwtAuthGuard extends AuthGuard('jwt') implements CanActivate {
     this.reflector = reflector;
   }
 
-  canActivate(context: ExecutionContext): boolean | Promise<boolean> {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (isPublic) {
+      const request = context.switchToHttp().getRequest<{
+        headers?: { authorization?: string };
+      }>();
+      const authorization = request.headers?.authorization;
+      if (authorization?.toLowerCase().startsWith('bearer ')) {
+        try {
+          return (await super.canActivate(context)) as boolean;
+        } catch {
+          return true;
+        }
+      }
       return true;
     }
-    return super.canActivate(context) as Promise<boolean>;
+    return (await super.canActivate(context)) as boolean;
   }
 
   handleRequest<TUser>(err: Error | null, user: TUser): TUser {

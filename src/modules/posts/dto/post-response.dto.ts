@@ -5,6 +5,9 @@ export class PostAuthorResponseDto {
   role: 'player' | 'scout' | 'admin';
   name: string;
   profilePictureUrl: string | null;
+  profile_picture_url?: string | null;
+  avatarUrl?: string | null;
+  avatar_url?: string | null;
   position?: string | null;
   isVerified?: boolean;
 }
