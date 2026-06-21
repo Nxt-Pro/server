@@ -43,7 +43,7 @@ export class EventsService {
       organizerType: organizerType,
       status: 'pending_approval',
       participantCount: 0,
-      venue: dto.venueId ? ({ id: dto.venueId } as Venue) : undefined,
+      venue: dto.venueId ? { id: dto.venueId } : undefined,
     });
 
     return this.eventRepository.save(event);

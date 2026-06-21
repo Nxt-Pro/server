@@ -3,7 +3,7 @@ import { ulid } from 'ulid';
 
 export abstract class BaseEntity {
   @PrimaryColumn('varchar', { length: 26 })
-  id: string = (ulid as () => string)();
+  id: string = ulid();
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

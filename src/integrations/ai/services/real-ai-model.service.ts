@@ -39,10 +39,7 @@ export class RealAiModelService implements IAiModelService {
     );
 
     if (input.analysisType === AnalysisType.GOALKEEPER) {
-      return this.analyzeWithModerationFallback(
-        input.videoUrl,
-        input.skill as GoalkeeperSkill,
-      );
+      return this.analyzeWithModerationFallback(input.videoUrl, input.skill);
     }
 
     if (
@@ -257,7 +254,7 @@ export class RealAiModelService implements IAiModelService {
       flags: Array.isArray(data.flags) ? (data.flags as string[]) : [],
       details:
         typeof data.details === 'object' && data.details !== null
-          ? (data.details as ModerationAnalysis['details'])
+          ? data.details
           : {},
     };
   }

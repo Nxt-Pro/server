@@ -77,9 +77,7 @@ export class VideoUploadConsumer extends BaseQueueConsumer {
         error instanceof Error ? error.stack : undefined,
       );
 
-      const userId = (
-        job.data as VideoUploadJobPayload | VideoModerationJobPayload
-      ).userId;
+      const userId = job.data.userId;
       await this.progressTracker.markFailed(jobId, userId, message);
 
       throw error;

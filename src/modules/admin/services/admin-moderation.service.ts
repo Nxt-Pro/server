@@ -90,7 +90,7 @@ export class AdminModerationService {
       {
         status: data.status,
         resolutionNotes: data.resolutionNotes ?? undefined,
-        resolvedBy: { id: adminId } as Pick<Report['resolvedBy'], 'id'>,
+        resolvedBy: { id: adminId },
         resolvedAt: new Date(),
       },
     );

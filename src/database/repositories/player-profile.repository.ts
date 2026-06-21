@@ -1,11 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  FindOptionsWhere,
-  QueryDeepPartialEntity,
-  Repository,
-  UpdateResult,
-} from 'typeorm';
+import { QueryDeepPartialEntity, Repository, UpdateResult } from 'typeorm';
 
 import { BaseRepository } from './base.repository';
 
@@ -30,9 +25,6 @@ export class PlayerProfileRepository extends BaseRepository<PlayerProfile> {
     userId: string,
     data: QueryDeepPartialEntity<PlayerProfile>,
   ): Promise<UpdateResult> {
-    return this.repository.update(
-      { userId } as FindOptionsWhere<PlayerProfile>,
-      data,
-    );
+    return this.repository.update({ userId }, data);
   }
 }

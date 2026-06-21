@@ -76,7 +76,7 @@ describe('EventsService', () => {
     userRepoMock.findOne.mockResolvedValue({
       id: 'admin-1',
       role: 'admin',
-    } as User);
+    });
     const created = { id: 'event-1' } as Event;
     eventRepoMock.create.mockReturnValue(created);
     eventRepoMock.save.mockResolvedValue(created);
@@ -145,7 +145,7 @@ describe('EventsService', () => {
     userRepoMock.findOne.mockResolvedValue({
       id: 'user-1',
       role: 'scout',
-    } as User);
+    });
 
     await expect(
       service.approveEvent('event-1', 'user-1', true),
@@ -161,7 +161,7 @@ describe('EventsService', () => {
     userRepoMock.findOne.mockResolvedValue({
       id: 'user-2',
       role: 'scout',
-    } as User);
+    });
 
     await expect(
       service.updateEvent('event-1', 'user-2', { title: 'New title' }),

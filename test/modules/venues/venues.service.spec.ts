@@ -60,7 +60,7 @@ describe('VenuesService', () => {
     userRepoMock.findOne.mockResolvedValue({
       id: 'admin-1',
       role: 'admin',
-    } as User);
+    });
     venueRepoMock.create.mockReturnValue(venue);
     venueRepoMock.save.mockResolvedValue(venue);
 
@@ -74,7 +74,7 @@ describe('VenuesService', () => {
     userRepoMock.findOne.mockResolvedValue({
       id: 'user-1',
       role: 'player',
-    } as User);
+    });
 
     const badDto: CreateVenueDto = { name: 'n', address: 'a' };
 
@@ -171,7 +171,7 @@ describe('VenuesService', () => {
     userRepoMock.findOne.mockResolvedValue({
       id: 'admin-1',
       role: 'admin',
-    } as User);
+    });
     venueRepoMock.create.mockReturnValue(venue);
     venueRepoMock.save.mockResolvedValue(venue);
 

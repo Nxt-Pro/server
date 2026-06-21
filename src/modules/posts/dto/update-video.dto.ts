@@ -4,9 +4,10 @@ import {
   IsInt,
   Min,
   MaxLength,
-  IsUrl,
   IsIn,
 } from 'class-validator';
+
+import { IsUrl } from '@/common/validators/url.validator';
 
 export class UpdateVideoDto {
   @IsOptional()

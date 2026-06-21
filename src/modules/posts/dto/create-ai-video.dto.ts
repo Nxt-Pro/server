@@ -1,4 +1,6 @@
-import { IsInt, IsOptional, IsUrl, MaxLength, Min } from 'class-validator';
+import { IsInt, IsOptional, MaxLength, Min } from 'class-validator';
+
+import { IsUrl } from '@/common/validators/url.validator';
 
 export class CreateAiVideoDto {
   @IsUrl()

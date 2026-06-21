@@ -38,7 +38,7 @@ export class TransformInterceptor<T> implements NestInterceptor<
         return false;
       }
 
-      const keys = Object.keys(obj as Record<string, unknown>);
+      const keys = Object.keys(obj);
       return keys.every(key => key === 'data' || key === 'message');
     }
 

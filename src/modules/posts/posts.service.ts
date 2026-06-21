@@ -118,9 +118,7 @@ export class PostsService {
         const post = manager.getRepository(Post).create({
           userId,
           caption: dto.caption ?? undefined,
-          visibility:
-            (dto.visibility as 'public' | 'connections' | 'private') ??
-            'public',
+          visibility: dto.visibility ?? 'public',
         });
         await manager.getRepository(Post).save(post);
 

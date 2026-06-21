@@ -145,7 +145,7 @@ export class UploadsService {
       throw new BadRequestException('No file provided.');
     }
 
-    return file as UploadableFile;
+    return file;
   }
 
   private resolveExtension(

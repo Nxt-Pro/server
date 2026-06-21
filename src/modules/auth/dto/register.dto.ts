@@ -22,7 +22,7 @@ export class RegisterDto {
   @MinLength(8, { message: 'Password must be at least 8 characters' })
   password: string;
 
-  @IsEnum(REGISTRABLE_ROLES as unknown as Record<string, string>, {
+  @IsEnum(REGISTRABLE_ROLES, {
     message: 'Role must be player or scout',
   })
   role: RegistrableRole;

@@ -1,11 +1,6 @@
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsUrl,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsIn, IsInt, IsOptional, MaxLength, Min } from 'class-validator';
+
+import { IsUrl } from '@/common/validators/url.validator';
 
 export class AddAttachmentDto {
   @IsUrl()

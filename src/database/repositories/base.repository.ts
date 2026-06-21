@@ -41,7 +41,7 @@ export abstract class BaseRepository<TEntity extends ObjectLiteral> {
   }
 
   async findById(id: TEntity['id']): Promise<TEntity | null> {
-    return this.repository.findOneBy({ id } as FindOptionsWhere<TEntity>);
+    return this.repository.findOneBy({ id });
   }
 
   async find(options?: FindManyOptions<TEntity>): Promise<TEntity[]> {

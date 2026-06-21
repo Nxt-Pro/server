@@ -38,9 +38,7 @@ export class AuditLogRepository extends BaseRepository<AuditLog> {
     userAgent?: string;
   }): Promise<AuditLog> {
     const entry = this.repository.create({
-      actor: params.actorId
-        ? ({ id: params.actorId } as Pick<AuditLog['actor'], 'id'>)
-        : undefined,
+      actor: params.actorId ? { id: params.actorId } : undefined,
       action: params.action,
       entityType: params.entityType,
       entityId: params.entityId,

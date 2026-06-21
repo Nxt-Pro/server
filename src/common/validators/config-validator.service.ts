@@ -10,6 +10,7 @@ import {
   queueSchema,
   uploadSchema,
 } from '@/config/schemas';
+import { yupUrl } from '@/common/validators/url.validator';
 
 @Injectable()
 export class ConfigValidatorService {
@@ -102,10 +103,10 @@ export class ConfigValidatorService {
   private async validateEnvironment(): Promise<void> {
     const schema = environmentSchema.shape({
       CORS_ORIGIN: this.isProductionLike()
-        ? Yup.string()
-            .required('CORS_ORIGIN is required in production')
-            .url('CORS_ORIGIN must be a valid URL in production')
-            .notOneOf(['*'], 'CORS_ORIGIN cannot be * in production')
+        ? yupUrl(
+            Yup.string().required('CORS_ORIGIN is required in production'),
+            'CORS_ORIGIN must be a valid URL in production',
+          ).notOneOf(['*'], 'CORS_ORIGIN cannot be * in production')
         : Yup.string().default('*'),
     });
 
@@ -168,15 +169,16 @@ export class ConfigValidatorService {
     const schema = (
       this.isProductionLike()
         ? uploadSchema.shape({
-            UPLOAD_PUBLIC_BASE_URL: Yup.string()
-              .required('UPLOAD_PUBLIC_BASE_URL is required in production')
-              .url('UPLOAD_PUBLIC_BASE_URL must be a valid URL')
-              .test(
-                'not-localhost',
-                'UPLOAD_PUBLIC_BASE_URL must not use localhost in production',
-                value =>
-                  Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
+            UPLOAD_PUBLIC_BASE_URL: yupUrl(
+              Yup.string().required(
+                'UPLOAD_PUBLIC_BASE_URL is required in production',
               ),
+              'UPLOAD_PUBLIC_BASE_URL must be a valid URL',
+            ).test(
+              'not-localhost',
+              'UPLOAD_PUBLIC_BASE_URL must not use localhost in production',
+              value => Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
+            ),
           })
         : uploadSchema
     ) as Yup.AnyObjectSchema;
@@ -196,9 +198,10 @@ export class ConfigValidatorService {
    */
   private async validateApp(): Promise<void> {
     const schema = Yup.object({
-      FRONTEND_BASE_URL: Yup.string()
-        .required('FRONTEND_BASE_URL is required')
-        .url('FRONTEND_BASE_URL must be a valid URL'),
+      FRONTEND_BASE_URL: yupUrl(
+        Yup.string().required('FRONTEND_BASE_URL is required'),
+        'FRONTEND_BASE_URL must be a valid URL',
+      ),
     });
 
     await this.runSchemaValidation(schema, 'App configuration');
@@ -280,7 +283,10 @@ export class ConfigValidatorService {
       (value: string | undefined, originalValue: unknown) =>
         originalValue === '' ? undefined : value,
     );
-    const optionalUrl = optionalString.trim().url();
+    const optionalUrl = yupUrl(
+      optionalString.trim(),
+      '${path} must be a valid URL',
+    );
     const optionalPort = Yup.number()
       .transform((_, originalValue) => {
         if (originalValue === '' || originalValue === undefined) {
@@ -307,10 +313,10 @@ export class ConfigValidatorService {
         .default(3000),
 
       CORS_ORIGIN: isProduction
-        ? Yup.string()
-            .required()
-            .url()
-            .notOneOf(['*'], 'CORS_ORIGIN cannot be * in production')
+        ? yupUrl(
+            Yup.string().required(),
+            'CORS_ORIGIN must be a valid URL',
+          ).notOneOf(['*'], 'CORS_ORIGIN cannot be * in production')
         : Yup.string().default('*'),
 
       // Database
@@ -369,8 +375,11 @@ export class ConfigValidatorService {
 
       // App
       FRONTEND_BASE_URL: strictExternalValidation
-        ? Yup.string().required().url()
-        : optionalString.url(),
+        ? yupUrl(
+            Yup.string().required(),
+            'FRONTEND_BASE_URL must be a valid URL',
+          )
+        : yupUrl(optionalString, 'FRONTEND_BASE_URL must be a valid URL'),
 
       // Mail
       MAIL_HOST: strictExternalValidation
@@ -514,15 +523,18 @@ export class ConfigValidatorService {
         .default('local'),
       UPLOAD_LOCAL_DIR: Yup.string().default('uploads'),
       UPLOAD_PUBLIC_BASE_URL: isProduction
-        ? Yup.string()
-            .required()
-            .url()
-            .test(
-              'not-localhost',
-              'UPLOAD_PUBLIC_BASE_URL must not use localhost in production',
-              value => Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
-            )
-        : Yup.string().url().default('http://localhost:3000/uploads'),
+        ? yupUrl(
+            Yup.string().required(),
+            'UPLOAD_PUBLIC_BASE_URL must be a valid URL',
+          ).test(
+            'not-localhost',
+            'UPLOAD_PUBLIC_BASE_URL must not use localhost in production',
+            value => Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
+          )
+        : yupUrl(
+            Yup.string(),
+            'UPLOAD_PUBLIC_BASE_URL must be a valid URL',
+          ).default('http://localhost:3000/uploads'),
       CDN_BASE_URL: optionalUrl,
       MAX_VIDEO_SIZE_MB: Yup.number()
         .transform((_, originalValue) => {
@@ -540,7 +552,10 @@ export class ConfigValidatorService {
 
       // AI scoring
       USE_MOCK_AI: Yup.string().oneOf(['true', 'false']).default('true'),
-      AI_MODEL_API_URL: optionalString.url(),
+      AI_MODEL_API_URL: yupUrl(
+        optionalString,
+        'AI_MODEL_API_URL must be a valid URL',
+      ),
       AI_MODEL_API_KEY: optionalString.min(10),
       AI_MODEL_TIMEOUT_MS: Yup.number()
         .transform((_, originalValue) => {

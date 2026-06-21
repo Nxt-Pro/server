@@ -1,16 +1,20 @@
 import * as Yup from 'yup';
 
+import { yupUrl } from '@/common/validators/url.validator';
+
 const optionalUrl = (message: string) =>
-  Yup.string()
-    .trim()
-    .transform(
-      (_value: unknown, originalValue: unknown): string | undefined => {
-        if (typeof originalValue !== 'string') return undefined;
-        const trimmed = originalValue.trim();
-        return trimmed === '' ? undefined : trimmed;
-      },
-    )
-    .url(message);
+  yupUrl(
+    Yup.string()
+      .trim()
+      .transform(
+        (_value: unknown, originalValue: unknown): string | undefined => {
+          if (typeof originalValue !== 'string') return undefined;
+          const trimmed = originalValue.trim();
+          return trimmed === '' ? undefined : trimmed;
+        },
+      ),
+    message,
+  );
 
 export const uploadSchema = Yup.object({
   UPLOAD_STORAGE_PROVIDER: Yup.string()
@@ -22,9 +26,10 @@ export const uploadSchema = Yup.object({
 
   UPLOAD_LOCAL_DIR: Yup.string().default('uploads'),
 
-  UPLOAD_PUBLIC_BASE_URL: Yup.string()
-    .url('UPLOAD_PUBLIC_BASE_URL must be a valid URL')
-    .default('http://localhost:3000/uploads'),
+  UPLOAD_PUBLIC_BASE_URL: yupUrl(
+    Yup.string(),
+    'UPLOAD_PUBLIC_BASE_URL must be a valid URL',
+  ).default('http://localhost:3000/uploads'),
 
   CDN_BASE_URL: optionalUrl('CDN_BASE_URL must be a valid URL'),
 

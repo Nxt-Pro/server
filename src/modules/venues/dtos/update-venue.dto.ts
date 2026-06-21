@@ -5,9 +5,10 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUrl,
   Min,
 } from 'class-validator';
+
+import { IsUrl } from '@/common/validators/url.validator';
 
 export class UpdateVenueDto {
   @IsString()

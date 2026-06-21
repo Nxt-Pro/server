@@ -142,11 +142,7 @@ describe('AuthService 2FA account behavior', () => {
       throw new Error('Expected setup to save the pending 2FA secret');
     }
 
-    const savedSetupUser = savedUser as {
-      twoFactorSecret: string;
-      twoFactorCode: string | null;
-      twoFactorCodeExpiresAt: Date | null;
-    };
+    const savedSetupUser = savedUser;
 
     expect(savedSetupUser.twoFactorSecret).toBe(setup.secret);
     expect(savedSetupUser.twoFactorCode).toBeNull();
