@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 
+import { MediaUrlService } from '@/common/media';
 import { UploadConfig } from '@/config';
 
 interface UploadResult {
@@ -49,14 +50,16 @@ const MIME_EXTENSION_MAP: Record<string, string[]> = {
 export class UploadsService {
   private readonly uploadConfig: UploadConfig;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly mediaUrlService: MediaUrlService,
+  ) {
     this.uploadConfig = this.configService.getOrThrow<UploadConfig>('upload');
   }
 
   async storeUploadedFile(
     file: unknown,
     resourceType?: 'image' | 'video',
-    publicBaseUrl?: string,
   ): Promise<UploadResult> {
     const normalizedFile = this.toUploadableFile(file);
 
@@ -124,12 +127,8 @@ export class UploadsService {
         throw new BadRequestException('Unable to read uploaded file contents.');
       }
 
-      const publicBase = (
-        publicBaseUrl || this.uploadConfig.localPublicBaseUrl
-      ).replace(/\/+$/, '');
-
       return {
-        url: `${publicBase}/${relativePath.replace(/\\/g, '/')}`,
+        url: this.mediaUrlService.buildPublicMediaUrl(relativePath),
         fileName,
         contentType: detectedType,
         mimeType,

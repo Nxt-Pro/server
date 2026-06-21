@@ -11,7 +11,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
 
 import { UploadsService } from './uploads.service';
 
@@ -41,7 +40,7 @@ export class UploadsController {
   async uploadSingle(
     @UploadedFiles() files: unknown[],
     @Req()
-    req: Request & {
+    req?: {
       file?: unknown;
       files?: unknown[] | Record<string, unknown>;
     },
@@ -66,7 +65,6 @@ export class UploadsController {
     const uploaded = await this.uploadsService.storeUploadedFile(
       file,
       resourceType,
-      this.resolvePublicUploadBaseUrl(req),
     );
 
     return {
@@ -76,30 +74,5 @@ export class UploadsController {
       fileName: uploaded.fileName,
       size: uploaded.size,
     };
-  }
-
-  private resolvePublicUploadBaseUrl(req: Request): string {
-    const configuredBase = process.env.UPLOAD_PUBLIC_BASE_URL?.trim();
-    if (configuredBase) {
-      return configuredBase.replace(/\/+$/, '');
-    }
-
-    const forwardedProto = this.firstHeader(req.headers['x-forwarded-proto']);
-    const forwardedHost = this.firstHeader(req.headers['x-forwarded-host']);
-    const proto = forwardedProto || req.protocol || 'http';
-    const host = forwardedHost || req.get('host');
-
-    if (!host) {
-      return '/uploads';
-    }
-
-    return `${proto}://${host}/uploads`;
-  }
-
-  private firstHeader(
-    value: string | string[] | undefined,
-  ): string | undefined {
-    const raw = Array.isArray(value) ? value[0] : value;
-    return raw?.split(',')[0]?.trim();
   }
 }

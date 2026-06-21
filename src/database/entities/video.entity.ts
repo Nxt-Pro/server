@@ -11,7 +11,7 @@ export class Video {
     nullable: true,
     name: 'video_thumbnail_url',
   })
-  videoThumbnailUrl?: string;
+  videoThumbnailUrl?: string | null;
 
   @Column('integer', {
     nullable: false,

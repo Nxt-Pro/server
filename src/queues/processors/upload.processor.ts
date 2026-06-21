@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { MediaUrlService } from '@/common/media';
 import { VideoUploadJobPayload } from '@/common/types';
 import { UploadConfig } from '@/config';
 import { AttachmentRepository, VideoRepository } from '@/database/repositories';
@@ -13,16 +14,19 @@ export class UploadProcessor {
   private readonly videoRepository: VideoRepository;
   private readonly attachmentRepository: AttachmentRepository;
   private readonly configService: ConfigService;
+  private readonly mediaUrlService: MediaUrlService;
   private readonly uploadConfig: UploadConfig;
 
   constructor(
     videoRepository: VideoRepository,
     attachmentRepository: AttachmentRepository,
     configService: ConfigService,
+    mediaUrlService: MediaUrlService,
   ) {
     this.videoRepository = videoRepository;
     this.attachmentRepository = attachmentRepository;
     this.configService = configService;
+    this.mediaUrlService = mediaUrlService;
     this.uploadConfig = this.configService.getOrThrow<UploadConfig>('upload');
   }
 
@@ -32,7 +36,7 @@ export class UploadProcessor {
   ): Promise<{
     videoId: string;
     videoUrl: string;
-    thumbnailUrl: string;
+    thumbnailUrl: string | null;
     duration: number;
     status: string;
     message: string;
@@ -43,13 +47,13 @@ export class UploadProcessor {
     await job.updateProgress(10);
     this.validateVideoFile(payload);
 
-    // Step 2: Generate thumbnail
+    // Step 2: Mark thumbnail unavailable until real processing exists
     await job.updateProgress(30);
-    const thumbnailUrl = this.generateThumbnail(payload);
+    const thumbnailUrl = this.resolveThumbnailUrl();
 
-    // Step 3: Upload to CDN
+    // Step 3: Resolve the already uploaded local/API-served video URL
     await job.updateProgress(50);
-    const videoUrl = this.uploadToCDN(payload);
+    const videoUrl = await this.resolveVideoUrl(payload);
 
     // Step 4: Get video metadata
     await job.updateProgress(70);
@@ -94,31 +98,42 @@ export class UploadProcessor {
   }
 
   /**
-   * Generate video thumbnail
-   * TODO: Implement real thumbnail generation using ffmpeg or a cloud service
+   * Real thumbnail generation is intentionally not implemented yet.
    */
-  private generateThumbnail(payload: VideoUploadJobPayload): string {
-    this.logger.log('Generating video thumbnail...');
-
-    // TODO: Generate an actual thumbnail frame from the video file
-    const thumbnailUrl = `${this.uploadConfig.cdnBaseUrl}/thumbnails/${payload.videoId}.jpg`;
-
-    this.logger.log(`Thumbnail generated: ${thumbnailUrl}`);
-    return thumbnailUrl;
+  private resolveThumbnailUrl(): string | null {
+    this.logger.log(
+      'Thumbnail generation is unavailable until a real media processor is configured.',
+    );
+    return null;
   }
 
   /**
-   * Upload video to CDN
-   * TODO: Implement real CDN upload (e.g. S3, Cloudflare R2, or similar)
+   * Resolve an honest public URL for a video that is already stored locally.
    */
-  private uploadToCDN(payload: VideoUploadJobPayload): string {
-    this.logger.log('Uploading video to CDN...');
+  private async resolveVideoUrl(
+    payload: VideoUploadJobPayload,
+  ): Promise<string> {
+    this.logger.log('Resolving public video URL from local storage...');
 
-    // TODO: Upload the actual file from payload.filePath to CDN storage
-    const videoUrl = `${this.uploadConfig.cdnBaseUrl}/videos/${payload.videoId}.mp4`;
+    const attachment = await this.attachmentRepository.findById(
+      payload.attachmentId,
+    );
+    if (attachment?.url) {
+      this.logger.log(`Using existing attachment URL: ${attachment.url}`);
+      return attachment.url;
+    }
 
-    this.logger.log(`Video uploaded to CDN: ${videoUrl}`);
-    return videoUrl;
+    const videoUrl = this.mediaUrlService.buildPublicMediaUrlFromLocalPath(
+      payload.filePath,
+    );
+    if (videoUrl) {
+      this.logger.log(`Resolved local video URL: ${videoUrl}`);
+      return videoUrl;
+    }
+
+    throw new Error(
+      'Video file is not in local upload storage and no storage provider adapter is implemented.',
+    );
   }
 
   /**
@@ -133,11 +148,10 @@ export class UploadProcessor {
   } {
     this.logger.log('Extracting video metadata...');
 
-    // TODO: Extract actual metadata (duration, resolution) from the video file
     const metadata = {
-      duration: 60,
-      width: 1920,
-      height: 1080,
+      duration: 0,
+      width: 0,
+      height: 0,
     };
 
     this.logger.log(`Video metadata extracted: ${JSON.stringify(metadata)}`);
@@ -150,7 +164,7 @@ export class UploadProcessor {
   private async updateDatabase(
     _payload: VideoUploadJobPayload,
     videoUrl: string,
-    thumbnailUrl: string,
+    thumbnailUrl: string | null,
     metadata: { duration: number; width: number; height: number },
   ): Promise<void> {
     this.logger.log(`Updating database for video ${_payload.videoId}`);

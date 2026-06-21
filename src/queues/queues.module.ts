@@ -15,6 +15,7 @@ import { QueueConfigService } from './queue-config.service';
 import { ProgressTrackerService } from './services';
 
 import { JobStatus, QueueName } from '@/common/enums';
+import { MediaModule } from '@/common/media';
 import { JobProgress } from '@/common/types';
 import { RepositoriesModule } from '@/database/repositories.module';
 import { AiModule } from '@/integrations/ai/ai.module';
@@ -234,6 +235,7 @@ const queueInfrastructureDisabled = isQueueInfrastructureDisabled();
 @Module({
   imports: [
     RepositoriesModule,
+    MediaModule,
     forwardRef(() => AiModule),
 
     ...(queueInfrastructureDisabled

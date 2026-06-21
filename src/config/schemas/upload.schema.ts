@@ -1,5 +1,17 @@
 import * as Yup from 'yup';
 
+const optionalUrl = (message: string) =>
+  Yup.string()
+    .trim()
+    .transform(
+      (_value: unknown, originalValue: unknown): string | undefined => {
+        if (typeof originalValue !== 'string') return undefined;
+        const trimmed = originalValue.trim();
+        return trimmed === '' ? undefined : trimmed;
+      },
+    )
+    .url(message);
+
 export const uploadSchema = Yup.object({
   UPLOAD_STORAGE_PROVIDER: Yup.string()
     .oneOf(
@@ -14,9 +26,7 @@ export const uploadSchema = Yup.object({
     .url('UPLOAD_PUBLIC_BASE_URL must be a valid URL')
     .default('http://localhost:3000/uploads'),
 
-  CDN_BASE_URL: Yup.string()
-    .url('CDN_BASE_URL must be a valid URL')
-    .default('https://cdn.nxtpro.com'),
+  CDN_BASE_URL: optionalUrl('CDN_BASE_URL must be a valid URL'),
 
   MAX_VIDEO_SIZE_MB: Yup.number()
     .transform((_, orig) =>

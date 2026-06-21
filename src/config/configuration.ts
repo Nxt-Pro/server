@@ -1,4 +1,10 @@
-import { aiConfig, databaseConfig, queueConfig, uploadConfig } from '.';
+import {
+  aiConfig,
+  cacheConfig,
+  databaseConfig,
+  queueConfig,
+  uploadConfig,
+} from '.';
 
 export default () => {
   const googleClientIdsFromCsv = (process.env.GOOGLE_OAUTH_CLIENT_IDS ?? '')
@@ -58,6 +64,7 @@ export default () => {
     // Sub-configs
     database: databaseConfig(),
     queue: queueConfig(),
+    cache: cacheConfig(),
     ai: aiConfig(),
     upload: uploadConfig(),
   };

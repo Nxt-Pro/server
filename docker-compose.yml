@@ -78,7 +78,7 @@ services:
       UPLOAD_STORAGE_PROVIDER: local
       UPLOAD_LOCAL_DIR: uploads
       UPLOAD_PUBLIC_BASE_URL: ${UPLOAD_PUBLIC_BASE_URL:-http://localhost:3000/uploads}
-      CDN_BASE_URL: ${CDN_BASE_URL:-https://cdn.nxtpro.com}
+      CDN_BASE_URL: ${CDN_BASE_URL:-}
       MAX_VIDEO_SIZE_MB: ${MAX_VIDEO_SIZE_MB:-500}
       ALLOWED_VIDEO_FORMATS: ${ALLOWED_VIDEO_FORMATS:-mp4,mov,m4v,avi,webm,mkv,3gp}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}

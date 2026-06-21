@@ -280,6 +280,7 @@ export class ConfigValidatorService {
       (value: string | undefined, originalValue: unknown) =>
         originalValue === '' ? undefined : value,
     );
+    const optionalUrl = optionalString.trim().url();
     const optionalPort = Yup.number()
       .transform((_, originalValue) => {
         if (originalValue === '' || originalValue === undefined) {
@@ -522,7 +523,7 @@ export class ConfigValidatorService {
               value => Boolean(value && !/localhost|127\.0\.0\.1/.test(value)),
             )
         : Yup.string().url().default('http://localhost:3000/uploads'),
-      CDN_BASE_URL: Yup.string().url().default('https://cdn.nxtpro.com'),
+      CDN_BASE_URL: optionalUrl,
       MAX_VIDEO_SIZE_MB: Yup.number()
         .transform((_, originalValue) => {
           if (originalValue === '' || originalValue === undefined) {

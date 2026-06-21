@@ -2,7 +2,7 @@ export interface UploadConfig {
   storageProvider: 'local' | 'cloud';
   localUploadDir: string;
   localPublicBaseUrl: string;
-  cdnBaseUrl: string;
+  cdnBaseUrl?: string;
   maxVideoSizeMB: number;
   maxVideoSizeBytes: number;
   allowedVideoFormats: string[];
@@ -51,7 +51,7 @@ export const uploadConfig = (): UploadConfig => {
     localUploadDir: process.env.UPLOAD_LOCAL_DIR || 'uploads',
     localPublicBaseUrl:
       process.env.UPLOAD_PUBLIC_BASE_URL || `http://localhost:${port}/uploads`,
-    cdnBaseUrl: process.env.CDN_BASE_URL || 'https://cdn.nxtpro.com',
+    cdnBaseUrl: process.env.CDN_BASE_URL?.trim() || undefined,
     maxVideoSizeMB: maxSizeMB,
     maxVideoSizeBytes: maxSizeMB * 1024 * 1024,
     allowedVideoFormats: formats,
