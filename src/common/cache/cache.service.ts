@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
-import { CacheConfig } from '@/config';
+import { CacheConfig, createRedisConnectionOptions } from '@/config';
 
 type CacheHit<T> = { hit: true; value: T };
 type CacheMiss = { hit: false };
@@ -16,17 +16,14 @@ export class CacheService implements OnModuleDestroy {
 
   constructor(private readonly configService: ConfigService) {
     this.cacheConfig = this.configService.getOrThrow<CacheConfig>('cache');
-    this.redis = new Redis({
-      host: this.cacheConfig.redis.host,
-      port: this.cacheConfig.redis.port,
-      password: this.cacheConfig.redis.password,
-      db: this.cacheConfig.redis.db,
-      tls: this.cacheConfig.redis.tls ? {} : undefined,
-      lazyConnect: true,
-      enableOfflineQueue: false,
-      maxRetriesPerRequest: 1,
-      connectTimeout: 1000,
-    });
+    this.redis = new Redis(
+      createRedisConnectionOptions(this.cacheConfig.redis, {
+        lazyConnect: true,
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1,
+        connectTimeout: 1000,
+      }),
+    );
 
     this.redis.on('error', error => {
       this.logger.warn(`Cache Redis error: ${error.message}`);

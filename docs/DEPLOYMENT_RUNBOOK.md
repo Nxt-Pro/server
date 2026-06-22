@@ -76,7 +76,8 @@ curl http://localhost:3000/api/health
 npm run docker:down
 ```
 
-Local Compose named volumes preserve PostgreSQL data, Redis data, and uploads.
+Local Compose named volumes preserve PostgreSQL data, local Redis data, and
+uploads.
 Use `docker compose --env-file .env.docker down -v` only when data loss is
 intentional.
 
@@ -119,9 +120,14 @@ connect over SSH, run migrations, or run seeds.
 Use `.env.example` for normal server environments and `.env.docker.example` for
 local Compose. Do not commit `.env`, `.env.*`, or real secrets.
 
-Production must provide explicit values for database, Redis, JWT, CORS,
-frontend URL, public upload URL, SMTP, and OAuth. Firebase currently degrades
-with a warning if omitted.
+Production must provide explicit values for database, JWT, CORS, frontend URL,
+public upload URL, SMTP, OAuth, and Redis. Docker/local staging defaults to
+`REDIS_PROVIDER=local` with the Compose Redis service. Optional Upstash mode
+uses `REDIS_PROVIDER=upstash` plus the normal Redis TCP URL
+(`REDIS_URL=rediss://default:<token>@<host>:6379`), not the Upstash REST
+client. Validate BullMQ queues, progress tracking, and cache against Upstash
+before relying on it in production. Firebase currently degrades with a warning
+if omitted.
 
 ## Health Checks
 

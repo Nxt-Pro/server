@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QueueOptions, WorkerOptions } from 'bullmq';
+import type { RedisOptions } from 'ioredis';
 
-import type { QueueConfig } from '@/config';
+import { createRedisConnectionOptions, type QueueConfig } from '@/config';
 
 @Injectable()
 export class QueueConfigService {
@@ -12,35 +13,18 @@ export class QueueConfigService {
     this.queueConfig = configService.getOrThrow<QueueConfig>('queue');
   }
 
-  getRedisConnection(): {
-    host: string;
-    port: number;
-    password?: string;
-    db: number;
-    tls?: object;
-    maxRetriesPerRequest: null;
-    enableReadyCheck: boolean;
-
-    retryStrategy: (times: number) => number;
-  } {
+  getRedisConnection(): RedisOptions {
     return this.redisConnection;
   }
 
-  private get redisConnection() {
+  private get redisConnection(): RedisOptions {
     const { redis } = this.queueConfig;
 
-    return {
-      host: redis.host,
-      port: redis.port,
-      password: redis.password,
-      db: redis.db,
-      tls: redis.tls ? {} : undefined,
-
+    return createRedisConnectionOptions(redis, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
-
       retryStrategy: (attempt: number) => Math.min(attempt * 50, 2000),
-    };
+    });
   }
 
   getQueueConfig(queueName: string): QueueOptions {

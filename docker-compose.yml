@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-nxtpro_redis_password}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local_redis_password}
     command: >
       sh -c 'redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"'
     ports:
@@ -60,10 +60,12 @@ services:
       DB_MIGRATIONS_RUN: ${DB_MIGRATIONS_RUN:-false}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
       DB_QUERY_TIMEOUT: ${DB_QUERY_TIMEOUT:-5000}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-nxtpro_redis_password}
-      REDIS_TLS: "false"
+      REDIS_PROVIDER: ${REDIS_PROVIDER:-local}
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local_redis_password}
+      REDIS_TLS: ${REDIS_TLS:-false}
       REDIS_DB_QUEUE: ${REDIS_DB_QUEUE:-0}
       REDIS_DB_CACHE: ${REDIS_DB_CACHE:-1}
       CACHE_TTL: ${CACHE_TTL:-300}

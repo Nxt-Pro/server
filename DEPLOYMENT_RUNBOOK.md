@@ -16,6 +16,10 @@ runtime hardening. It does not claim the stack is fully production-complete.
 - Media uploads are local-storage backed and served from `/uploads`.
 - Media URL generation is centralized and CDN-fronting-ready.
 - Venue list lookups use explicit Redis caching with narrow invalidation.
+- Redis is provider-selectable. `REDIS_PROVIDER=local` uses the Docker/local
+  Redis service by default. `REDIS_PROVIDER=upstash` uses the normal Upstash
+  Redis TCP URL in `REDIS_URL` (`rediss://default:<token>@<host>:6379`), not
+  the Upstash REST client.
 
 ## Provider-Ready But Not Provider-Integrated
 

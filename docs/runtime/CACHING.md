@@ -26,12 +26,28 @@ personalized and does not include viewer-specific flags.
 
 ## Configuration
 
+- `REDIS_PROVIDER`, default `local`
+- `REDIS_URL` for `REDIS_PROVIDER=upstash`, for example
+  `rediss://default:<token>@one-peacock-72782.upstash.io:6379`
 - `REDIS_HOST`
 - `REDIS_PORT`
 - `REDIS_PASSWORD`
 - `REDIS_TLS`
 - `REDIS_DB_CACHE`
 - `CACHE_TTL`
+
+When `REDIS_PROVIDER=local`, queues, progress tracking, and cache use the
+normal `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_TLS` settings.
+This is the default for Docker and staging Compose.
+
+When `REDIS_PROVIDER=upstash`, those same ioredis/BullMQ clients use
+`REDIS_URL`. This is the normal Upstash Redis TCP URL, not the
+`@upstash/redis` REST client. Upstash should use `rediss://` or explicitly
+enable TLS with `REDIS_TLS=true`. Upstash uses the database selected by the
+URL, which is normally DB 0.
+
+Validate BullMQ queue processing, progress tracking, and cache behavior against
+the selected Upstash database before relying on it in production.
 
 If Redis is unavailable, `CacheService` bypasses cache reads/writes for a
 short window and lets the database-backed request continue.

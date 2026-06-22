@@ -1,6 +1,26 @@
 import * as Yup from 'yup';
 
 export const queueSchema = Yup.object({
+  REDIS_PROVIDER: Yup.string()
+    .oneOf(['local', 'upstash'], 'REDIS_PROVIDER must be local or upstash')
+    .default('local'),
+  REDIS_URL: Yup.string().test(
+    'redis-url-protocol',
+    'REDIS_URL must be a valid redis:// or rediss:// URL',
+    value => {
+      if (!value) return true;
+      if (!value.startsWith('redis://') && !value.startsWith('rediss://')) {
+        return false;
+      }
+
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  ),
   REDIS_HOST: Yup.string().default('localhost'),
   REDIS_PORT: Yup.number()
     .transform((_, orig) =>

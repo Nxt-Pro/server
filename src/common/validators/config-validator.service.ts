@@ -131,25 +131,66 @@ export class ConfigValidatorService {
    * Validates queue Redis and BullMQ configuration
    */
   private async validateQueue(): Promise<void> {
+    const redisProvider = this.getRedisProvider();
+    const isUpstashProvider = redisProvider === 'upstash';
+    const redisPortSchema = Yup.number()
+      .transform((_, orig) =>
+        orig === undefined || orig === '' ? undefined : Number(orig),
+      )
+      .min(1)
+      .max(65535);
+    const redisUrlSchema = Yup.string().test(
+      'redis-url-provider',
+      'REDIS_URL must be a valid redis:// or rediss:// URL and Upstash must use rediss:// or REDIS_TLS=true',
+      value => this.isRedisUrlValid(value, this.config, isUpstashProvider),
+    );
     const schema = (
       this.isProductionLike()
         ? queueSchema.shape({
-            REDIS_HOST: Yup.string().required(
-              'REDIS_HOST is required in production',
-            ),
-            REDIS_PORT: Yup.number()
-              .transform((_, orig) =>
-                orig === undefined || orig === '' ? undefined : Number(orig),
-              )
-              .required('REDIS_PORT is required in production'),
-            REDIS_PASSWORD: Yup.string().required(
-              'REDIS_PASSWORD is required in production',
-            ),
-            REDIS_TLS: Yup.string()
-              .required('REDIS_TLS is required in production')
-              .oneOf(['true', 'false'], 'REDIS_TLS must be true or false'),
+            REDIS_PROVIDER: Yup.string()
+              .required('REDIS_PROVIDER is required')
+              .oneOf(
+                ['local', 'upstash'],
+                'REDIS_PROVIDER must be local or upstash',
+              ),
+            REDIS_URL: isUpstashProvider
+              ? redisUrlSchema.required(
+                  'REDIS_URL is required when REDIS_PROVIDER=upstash',
+                )
+              : redisUrlSchema,
+            REDIS_HOST: isUpstashProvider
+              ? Yup.string()
+              : Yup.string().required(
+                  'REDIS_HOST is required in production when REDIS_PROVIDER=local',
+                ),
+            REDIS_PORT: isUpstashProvider
+              ? redisPortSchema
+              : redisPortSchema.required(
+                  'REDIS_PORT is required in production when REDIS_PROVIDER=local',
+                ),
+            REDIS_PASSWORD: isUpstashProvider
+              ? Yup.string()
+              : Yup.string().required(
+                  'REDIS_PASSWORD is required in production when REDIS_PROVIDER=local',
+                ),
+            REDIS_TLS: isUpstashProvider
+              ? Yup.string().oneOf(
+                  ['true', 'false'],
+                  'REDIS_TLS must be true or false',
+                )
+              : Yup.string()
+                  .required(
+                    'REDIS_TLS is required in production when REDIS_PROVIDER=local',
+                  )
+                  .oneOf(['true', 'false'], 'REDIS_TLS must be true or false'),
           })
-        : queueSchema
+        : queueSchema.shape({
+            REDIS_URL: isUpstashProvider
+              ? redisUrlSchema.required(
+                  'REDIS_URL is required when REDIS_PROVIDER=upstash',
+                )
+              : redisUrlSchema,
+          })
     ) as Yup.AnyObjectSchema;
 
     await this.runSchemaValidation(schema, 'Queue configuration');
@@ -296,6 +337,13 @@ export class ConfigValidatorService {
       })
       .min(1)
       .max(65535);
+    const redisProvider = this.getRedisProvider(config);
+    const isUpstashProvider = redisProvider === 'upstash';
+    const optionalRedisUrl = optionalString.test(
+      'redis-url-provider',
+      'REDIS_URL must be a valid redis:// or rediss:// URL and Upstash must use rediss:// or REDIS_TLS=true',
+      value => this.isRedisUrlValid(value, config, isUpstashProvider),
+    );
 
     return Yup.object({
       NODE_ENV: Yup.string()
@@ -429,30 +477,44 @@ export class ConfigValidatorService {
         : optionalString,
 
       // Redis, queues, and cache
-      REDIS_HOST: isProduction
-        ? Yup.string().required()
-        : Yup.string().default('localhost'),
-      REDIS_PORT: isProduction
-        ? Yup.number()
-            .transform((_, originalValue) => {
-              if (originalValue === '' || originalValue === undefined) {
-                return undefined;
-              }
-              return Number(originalValue);
-            })
-            .required()
-        : Yup.number()
-            .transform((_, originalValue) => {
-              if (originalValue === '' || originalValue === undefined) {
-                return undefined;
-              }
-              return Number(originalValue);
-            })
-            .default(6379),
-      REDIS_PASSWORD: isProduction ? Yup.string().required() : optionalString,
-      REDIS_TLS: isProduction
-        ? Yup.string().required().oneOf(['true', 'false'])
-        : Yup.string().oneOf(['true', 'false']).default('false'),
+      REDIS_PROVIDER: Yup.string()
+        .oneOf(['local', 'upstash'], 'REDIS_PROVIDER must be local or upstash')
+        .default('local'),
+      REDIS_URL: isUpstashProvider
+        ? optionalRedisUrl.required(
+            'REDIS_URL is required when REDIS_PROVIDER=upstash',
+          )
+        : optionalRedisUrl,
+      REDIS_HOST:
+        isProduction && !isUpstashProvider
+          ? Yup.string().required()
+          : Yup.string().default('localhost'),
+      REDIS_PORT:
+        isProduction && !isUpstashProvider
+          ? Yup.number()
+              .transform((_, originalValue) => {
+                if (originalValue === '' || originalValue === undefined) {
+                  return undefined;
+                }
+                return Number(originalValue);
+              })
+              .required()
+          : Yup.number()
+              .transform((_, originalValue) => {
+                if (originalValue === '' || originalValue === undefined) {
+                  return undefined;
+                }
+                return Number(originalValue);
+              })
+              .default(6379),
+      REDIS_PASSWORD:
+        isProduction && !isUpstashProvider
+          ? Yup.string().required()
+          : optionalString,
+      REDIS_TLS:
+        isProduction && !isUpstashProvider
+          ? Yup.string().required().oneOf(['true', 'false'])
+          : Yup.string().oneOf(['true', 'false']).default('false'),
       REDIS_DB_QUEUE: Yup.number()
         .transform((_, originalValue) => {
           if (originalValue === '' || originalValue === undefined) {
@@ -614,6 +676,44 @@ export class ConfigValidatorService {
   }
 
   /**
+   * Returns the selected Redis provider. Local Redis remains the default.
+   */
+  private getRedisProvider(
+    config: Record<string, unknown> = this.config,
+  ): 'local' | 'upstash' {
+    return this.normalizeConfigValue(config.REDIS_PROVIDER, 'local')
+      .trim()
+      .toLowerCase() === 'upstash'
+      ? 'upstash'
+      : 'local';
+  }
+
+  /**
+   * Validates Redis TCP URLs and enforces TLS when Upstash is selected.
+   */
+  private isRedisUrlValid(
+    value: string | undefined,
+    config: Record<string, unknown>,
+    requireTls: boolean,
+  ): boolean {
+    if (!value) return true;
+    if (!value.startsWith('redis://') && !value.startsWith('rediss://')) {
+      return false;
+    }
+
+    try {
+      const parsedUrl = new URL(value);
+      const tlsEnabled =
+        parsedUrl.protocol === 'rediss:' ||
+        this.normalizeConfigValue(config.REDIS_TLS).toLowerCase() === 'true';
+
+      return !requireTls || tlsEnabled;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Converts env values to strings without triggering object stringification lint errors.
    */
   private normalizeConfigValue(value: unknown, fallback = ''): string {
@@ -631,7 +731,7 @@ export class ConfigValidatorService {
    */
   private sanitizeErrorMessage(message: string): string {
     return message.replace(
-      /(JWT_SECRET|DB_PASSWORD|DB_USERNAME|JWT_REFRESH_SECRET|REDIS_PASSWORD|MAIL_PASSWORD|FACEBOOK_APP_SECRET|SUPER_ADMIN_[12]_PASSWORD):\s*[^,]*/gi,
+      /(JWT_SECRET|DB_PASSWORD|DB_USERNAME|JWT_REFRESH_SECRET|REDIS_URL|REDIS_PASSWORD|MAIL_PASSWORD|FACEBOOK_APP_SECRET|SUPER_ADMIN_[12]_PASSWORD):\s*[^,]*/gi,
       '$1: [REDACTED]',
     );
   }
