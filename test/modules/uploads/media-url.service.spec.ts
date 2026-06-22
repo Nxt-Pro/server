@@ -37,8 +37,19 @@ describe('MediaUrlService', () => {
     );
   });
 
-  it('uses CDN base only when explicitly configured as a fronting URL', () => {
+  it('keeps local storage URLs on the configured public upload base', () => {
     const service = createService({
+      cdnBaseUrl: 'https://cdn.example.com/uploads/',
+    });
+
+    expect(service.buildPublicMediaUrl('videos/video.mp4')).toBe(
+      'http://api.example.com/uploads/videos/video.mp4',
+    );
+  });
+
+  it('uses CDN base only for non-local storage provider URLs', () => {
+    const service = createService({
+      storageProvider: 'cloud',
       cdnBaseUrl: 'https://cdn.example.com/uploads/',
     });
 
@@ -65,5 +76,17 @@ describe('MediaUrlService', () => {
     expect(() =>
       service.buildPublicMediaUrl('https://cdn.example.com/videos/video.mp4'),
     ).toThrow('Media path must be relative');
+  });
+
+  it('resolves response media values without rewriting fetchable absolute URLs', () => {
+    const service = createService();
+
+    expect(service.resolvePublicMediaUrl('images/image.jpg')).toBe(
+      'http://api.example.com/uploads/images/image.jpg',
+    );
+    expect(
+      service.resolvePublicMediaUrl('https://media.example.com/video.mp4'),
+    ).toBe('https://media.example.com/video.mp4');
+    expect(service.resolvePublicMediaUrl('file:///tmp/video.mp4')).toBeNull();
   });
 });

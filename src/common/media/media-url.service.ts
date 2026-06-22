@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { UploadConfig } from '@/config';
 
 const ABSOLUTE_URL_RE = /^[a-z][a-z\d+\-.]*:/i;
+const FETCHABLE_URL_RE = /^https?:\/\//i;
 
 @Injectable()
 export class MediaUrlService {
@@ -20,6 +21,19 @@ export class MediaUrlService {
     const publicBaseUrl = this.getPublicMediaBaseUrl();
 
     return `${publicBaseUrl}/${normalizedPath}`;
+  }
+
+  resolvePublicMediaUrl(
+    storedPathOrUrl: string | null | undefined,
+  ): string | null {
+    const raw = storedPathOrUrl?.trim();
+    if (!raw) return null;
+
+    if (ABSOLUTE_URL_RE.test(raw)) {
+      return FETCHABLE_URL_RE.test(raw) ? raw : null;
+    }
+
+    return this.buildPublicMediaUrl(raw);
   }
 
   buildPublicMediaUrlFromLocalPath(localPath: string): string | null {
@@ -40,7 +54,9 @@ export class MediaUrlService {
 
   getPublicMediaBaseUrl(): string {
     const baseUrl =
-      this.uploadConfig.cdnBaseUrl || this.uploadConfig.localPublicBaseUrl;
+      this.uploadConfig.storageProvider === 'local'
+        ? this.uploadConfig.localPublicBaseUrl
+        : this.uploadConfig.cdnBaseUrl || this.uploadConfig.localPublicBaseUrl;
 
     return baseUrl.replace(/\/+$/, '');
   }

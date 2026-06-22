@@ -26,6 +26,7 @@ import type {
   VideoResponseDto,
 } from './dto';
 
+import { MediaUrlService } from '@/common/media';
 import {
   Attachment,
   Block,
@@ -77,6 +78,7 @@ export class PostsService {
     blockRepository: Repository<Block>,
     @InjectRepository(Mute)
     muteRepository: Repository<Mute>,
+    private readonly mediaUrlService: MediaUrlService,
   ) {
     this.postRepository = postRepository;
     this.attachmentRepository = attachmentRepository;
@@ -210,8 +212,8 @@ export class PostsService {
     return {
       id: video.id,
       post_id: post.id,
-      url: attachment.url,
-      video_thumbnail_url: video.videoThumbnailUrl ?? null,
+      url: this.resolveMediaUrl(attachment.url) ?? attachment.url,
+      video_thumbnail_url: this.resolveMediaUrl(video.videoThumbnailUrl),
       video_duration: video.videoDuration,
       title: post.caption ?? '',
       views_count: post.viewsCount ?? 0,
@@ -726,7 +728,7 @@ export class PostsService {
     }
 
     if (dto.url !== undefined) {
-      video.attachment.url = dto.url;
+      video.attachment.url = this.ensureDurableMediaUrl(dto.url);
       await this.attachmentRepository.save(video.attachment);
     }
     if (dto.videoDuration !== undefined) {
@@ -777,8 +779,8 @@ export class PostsService {
     return {
       id: video.id,
       post_id: post.id,
-      url: attachment.url,
-      video_thumbnail_url: video.videoThumbnailUrl ?? null,
+      url: this.resolveMediaUrl(attachment.url) ?? attachment.url,
+      video_thumbnail_url: this.resolveMediaUrl(video.videoThumbnailUrl),
       video_duration: video.videoDuration,
       title: post.caption ?? '',
       views_count: post.viewsCount ?? 0,
@@ -953,7 +955,9 @@ export class PostsService {
     if (!user) return null;
 
     if (user.playerProfile) {
-      const profilePictureUrl = user.playerProfile.profilePictureUrl ?? null;
+      const profilePictureUrl = this.resolveMediaUrl(
+        user.playerProfile.profilePictureUrl,
+      );
       return {
         id: user.id,
         role: user.role,
@@ -968,7 +972,9 @@ export class PostsService {
     }
 
     if (user.scoutProfile) {
-      const profilePictureUrl = user.scoutProfile.profilePictureUrl ?? null;
+      const profilePictureUrl = this.resolveMediaUrl(
+        user.scoutProfile.profilePictureUrl,
+      );
       return {
         id: user.id,
         role: user.role,
@@ -1002,7 +1008,7 @@ export class PostsService {
       id: attachment.id,
       postId: attachment.postId,
       contentType: attachment.contentType,
-      url: attachment.url,
+      url: this.resolveMediaUrl(attachment.url) ?? attachment.url,
       position: attachment.position,
       videoDuration:
         attachment.contentType === 'video' && attachment.video
@@ -1010,9 +1016,13 @@ export class PostsService {
           : undefined,
       videoThumbnailUrl:
         attachment.contentType === 'video' && attachment.video
-          ? (attachment.video.videoThumbnailUrl ?? null)
+          ? this.resolveMediaUrl(attachment.video.videoThumbnailUrl)
           : undefined,
     };
+  }
+
+  private resolveMediaUrl(value: string | null | undefined): string | null {
+    return this.mediaUrlService.resolvePublicMediaUrl(value);
   }
 
   private toCommentResponse(comment: Comment): CommentResponseDto {

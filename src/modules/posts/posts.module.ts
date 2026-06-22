@@ -16,9 +16,11 @@ import {
   User,
   Video,
 } from '@/database/entities';
+import { MediaModule } from '@/common/media';
 
 @Module({
   imports: [
+    MediaModule,
     TypeOrmModule.forFeature([
       Post,
       Attachment,

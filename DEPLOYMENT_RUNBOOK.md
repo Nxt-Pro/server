@@ -23,7 +23,8 @@ runtime hardening. It does not claim the stack is fully production-complete.
 
 ## Provider-Ready But Not Provider-Integrated
 
-- `CDN_BASE_URL` can front `/uploads` when a real CDN is configured.
+- `CDN_BASE_URL` is reserved for a real provider/fronting setup. Local storage
+  responses use `UPLOAD_PUBLIC_BASE_URL`.
 - No cloud object storage adapter exists yet.
 - No CDN upload or purge API exists yet.
 

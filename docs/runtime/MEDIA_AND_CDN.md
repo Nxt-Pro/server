@@ -11,11 +11,12 @@ Current media runtime:
 - storage root: `UPLOAD_LOCAL_DIR`, default `uploads`;
 - served path: `/uploads`;
 - public local base: `UPLOAD_PUBLIC_BASE_URL`;
-- optional fronting base: `CDN_BASE_URL`.
+- future provider/fronting base: `CDN_BASE_URL`.
 
-`CDN_BASE_URL` no longer has a fake default. It is used only when explicitly
-configured, and only as a public URL front for files still served from
-`/uploads`.
+`CDN_BASE_URL` has no fake default. While `UPLOAD_STORAGE_PROVIDER=local`,
+returned upload URLs use `UPLOAD_PUBLIC_BASE_URL` so they honestly point at the
+API/static upload server. `CDN_BASE_URL` is reserved for a real configured
+provider/fronting setup and should stay empty for local storage.
 
 ## Why This Strategy
 
@@ -28,27 +29,58 @@ storage provider remains honest and local.
 - `UPLOAD_STORAGE_PROVIDER=local`
 - `UPLOAD_LOCAL_DIR=uploads`
 - `UPLOAD_PUBLIC_BASE_URL=http://<api-host>/uploads`
-- `CDN_BASE_URL=` optional; set only when a real CDN fronts `/uploads`
+- `CDN_BASE_URL=` leave empty until a real provider/fronting setup exists
 - `MAX_VIDEO_SIZE_MB`
 - `ALLOWED_VIDEO_FORMATS`
 
-If `CDN_BASE_URL` is empty, returned URLs use `UPLOAD_PUBLIC_BASE_URL`.
-If `CDN_BASE_URL` is set, returned URLs use it as a fronting base only.
+When storage is local, returned URLs use `UPLOAD_PUBLIC_BASE_URL`.
 
 ## Production-Ready Now
 
 - local upload validation and storage;
 - public serving through `/uploads`;
+- byte-range friendly static serving for videos;
+- cache headers for immutable uploaded files;
 - centralized URL construction;
-- optional CDN-fronted URL base;
+- CDN-ready URL abstraction without fake CDN generation;
 - no fake CDN upload claims;
 - no synthesized provider URLs for thumbnails or processed media.
+
+## Delivery And Performance
+
+The API serves local uploads with `express.static` mounted at `/uploads`.
+Express static delivery supports HTTP byte range requests, so video clients can
+request partial content instead of downloading the full file before playback.
+
+Uploaded file names are generated with ULIDs and are treated as immutable. The
+server sets cache headers on `/uploads` responses:
+
+- `Cache-Control` with a 30 day max age and `immutable`;
+- `ETag` and `Last-Modified`;
+- `Content-Disposition: inline`;
+- `X-Content-Type-Options: nosniff`.
+
+This is enough for development and small single-instance deployments. For a
+heavier production deployment, serve `/uploads` directly from NGINX or another
+static file server in front of the same durable upload directory. NGINX should
+preserve range requests and use the same cache policy.
+
+Client-side performance currently depends on:
+
+- resizing/compressing post images before upload with `expo-image-manipulator`;
+- resizing/compressing profile avatars before upload;
+- disk-backed image caching through `expo-image` on feed, post detail,
+  bookmarks, and profile media grids;
+- mounting only active video players in FYP/reels;
+- using video posters only when an actual thumbnail URL exists.
 
 ## Intentionally Not Implemented
 
 - no S3, Cloudinary, R2, Cloudflare, or other storage adapter;
 - no CDN provider selection;
 - no real thumbnail generation;
+- no server-side image resizing pipeline;
+- no video transcoding or fast-start remuxing pipeline;
 - no real ffprobe/metadata extraction;
 - no local-to-cloud replication.
 
@@ -71,7 +103,41 @@ Manual smoke test:
 3. Upload an image or video through `POST /api/upload`.
 4. Confirm the returned URL starts with `UPLOAD_PUBLIC_BASE_URL`.
 5. Fetch the returned URL and confirm the file is served.
-6. Set `CDN_BASE_URL` only after a real CDN fronts `/uploads`, then repeat.
+6. Keep `CDN_BASE_URL` empty for local storage. Introduce it only with a real
+   provider/fronting implementation and test fetches end to end.
+
+Media persistence test:
+
+1. Upload an image, video, and avatar as User A.
+2. Copy the raw returned media URL from the upload response or API payload.
+3. Open the copied media URL directly in a browser and confirm it renders inline.
+4. Stop Expo.
+5. Clear the Expo cache:
+
+   ```bash
+   npx expo start --clear
+   ```
+
+6. Restart the app and log in as User B.
+7. Confirm the same media appears in reels/FYP, post detail, profile, and avatar
+   surfaces.
+8. If safe in the current environment, stop and restart the backend.
+9. Open the copied direct media URL again and confirm it still works.
+10. If using Docker Compose, restart the API container and confirm media still
+    exists because `docker-compose.yml` mounts `api_uploads:/app/uploads`.
+
+Range/cache validation:
+
+```bash
+curl -I <media-url>
+curl -H "Range: bytes=0-1023" -o /dev/null -i <video-url>
+```
+
+Expected:
+
+- image/video responses include cache headers;
+- direct media opens inline instead of downloading by default;
+- ranged video requests return partial-content behavior from the static server.
 
 ## Known Risks
 
@@ -80,6 +146,9 @@ Manual smoke test:
 - CDN fronting only improves delivery; it does not add durable cloud storage.
 - Thumbnail and metadata fields remain unavailable until real processors are
   implemented.
+- Very large videos are stored as uploaded. Without transcoding, fast-start
+  remuxing, and generated thumbnails, slow networks can still see delayed first
+  frame behavior.
 
 ## Future Provider Steps
 

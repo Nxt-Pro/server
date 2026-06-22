@@ -8,6 +8,8 @@ import express from 'express';
 import { ConfigService } from '@nestjs/config';
 import { LoggingMiddleware } from '@/common/middlewares';
 
+const UPLOADS_CACHE_MAX_AGE = '30d';
+
 export function setupServer(
   app: INestApplication,
   configService: ConfigService,
@@ -36,7 +38,20 @@ export function setupServer(
   if (!existsSync(uploadPath)) {
     mkdirSync(uploadPath, { recursive: true });
   }
-  app.use('/uploads', express.static(uploadPath));
+  app.use(
+    '/uploads',
+    express.static(uploadPath, {
+      acceptRanges: true,
+      etag: true,
+      immutable: true,
+      lastModified: true,
+      maxAge: UPLOADS_CACHE_MAX_AGE,
+      setHeaders: res => {
+        res.setHeader('Content-Disposition', 'inline');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+      },
+    }),
+  );
 
   // Global pipes
   app.useGlobalPipes(
