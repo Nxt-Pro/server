@@ -6,6 +6,7 @@ import 'reflect-metadata';
 import { FindOperator } from 'typeorm';
 import { Notification, User } from '@/database/entities';
 import { FirebaseService } from '@/integrations/firebase/firebase.service';
+import { NotificationPreferencesService } from '@/modules/settings';
 import {
   CreateNotificationEvent,
   NotificationsService,
@@ -26,6 +27,9 @@ describe('NotificationsService', () => {
   };
   let firebaseService: { sendMulticastNotification: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
+  let notificationPreferencesService: {
+    allowsInAppNotification: jest.Mock;
+  };
 
   beforeEach(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -52,6 +56,9 @@ describe('NotificationsService', () => {
     eventEmitter = {
       emit: jest.fn(),
     };
+    notificationPreferencesService = {
+      allowsInAppNotification: jest.fn().mockResolvedValue(true),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -71,6 +78,10 @@ describe('NotificationsService', () => {
         {
           provide: EventEmitter2,
           useValue: eventEmitter,
+        },
+        {
+          provide: NotificationPreferencesService,
+          useValue: notificationPreferencesService,
         },
       ],
     }).compile();
@@ -119,6 +130,9 @@ describe('NotificationsService', () => {
       type: payload.type,
       referenceId: payload.referenceId,
     });
+    expect(
+      notificationPreferencesService.allowsInAppNotification,
+    ).toHaveBeenCalledWith(payload.userId, undefined);
 
     expect(notificationRepo.save).toHaveBeenCalledWith(created);
     expect(eventEmitter.emit).toHaveBeenCalledWith('notification.created', {
@@ -230,6 +244,29 @@ describe('NotificationsService', () => {
     await expect(
       service.handleNotificationCreate(payload),
     ).resolves.toBeUndefined();
+    expect(firebaseService.sendMulticastNotification).not.toHaveBeenCalled();
+  });
+
+  it('handleNotificationCreate skips DB and push when preferences suppress it', async () => {
+    const payload: CreateNotificationEvent = {
+      userId: 'user_1',
+      title: 'New message',
+      message: 'A message arrived',
+      type: 'message',
+      preference: 'chatMessages',
+    };
+
+    notificationPreferencesService.allowsInAppNotification.mockResolvedValue(
+      false,
+    );
+
+    await service.handleNotificationCreate(payload);
+
+    expect(
+      notificationPreferencesService.allowsInAppNotification,
+    ).toHaveBeenCalledWith('user_1', 'chatMessages');
+    expect(notificationRepo.create).not.toHaveBeenCalled();
+    expect(notificationRepo.save).not.toHaveBeenCalled();
     expect(firebaseService.sendMulticastNotification).not.toHaveBeenCalled();
   });
 });

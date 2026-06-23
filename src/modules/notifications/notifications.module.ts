@@ -5,12 +5,14 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { FirebaseModule } from '@/integrations/firebase/firebase.module';
 import { Notification, User } from '@/database/entities';
+import { SettingsModule } from '@/modules/settings';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Notification, User]),
     EventEmitterModule,
     FirebaseModule,
+    SettingsModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService],

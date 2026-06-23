@@ -1,11 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { SendMessageDto, StartChatDto } from './dtos';
-import { Chat, ChatParticipant, Message, User } from '@/database/entities';
+import { FindOptionsWhere, IsNull, MoreThan, Not, Repository } from 'typeorm';
+import { ReportChatDto, SendMessageDto, StartChatDto } from './dtos';
+import {
+  Block,
+  Chat,
+  ChatParticipant,
+  Message,
+  Report,
+  User,
+} from '@/database/entities';
 import { MailService } from '@/integrations/mail/mail.service';
 import { HttpError } from '@/common/utils';
+import {
+  NotificationPreferenceKey,
+  NotificationPreferencesService,
+} from '@/modules/settings';
 
 @Injectable()
 export class ChatService {
@@ -20,8 +31,13 @@ export class ChatService {
     private readonly messageRepository: Repository<Message>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Report)
+    private readonly reportRepository: Repository<Report>,
+    @InjectRepository(Block)
+    private readonly blockRepository: Repository<Block>,
     private readonly eventEmitter: EventEmitter2,
     private readonly mailService: MailService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
   private getUserOrThrow = async (userId?: string) => {
     if (!userId) {
@@ -148,21 +164,37 @@ export class ChatService {
         message: initialMessage,
       });
 
-      this.eventEmitter.emit('notification.create', {
-        userId: scoutId,
-        title: 'New chat request',
-        message: initialMessage
-          ? `${requesterName}: ${initialMessage}`
-          : `${requesterName} requested to chat with you.`,
-        type: 'message',
-        referenceId: createdChat.id,
-      });
+      if (
+        await this.shouldSendChatInAppNotification(
+          scoutId,
+          createdChat.id,
+          'chatRequests',
+        )
+      ) {
+        this.eventEmitter.emit('notification.create', {
+          userId: scoutId,
+          title: 'New chat request',
+          message: initialMessage
+            ? `${requesterName}: ${initialMessage}`
+            : `${requesterName} requested to chat with you.`,
+          type: 'message',
+          referenceId: createdChat.id,
+          preference: 'chatRequests',
+        });
+      }
 
-      this.sendBestEffortChatRequestEmail(
-        targetUser.email,
-        requesterName,
-        initialMessage,
-      );
+      if (
+        await this.notificationPreferencesService.allowsEmailNotification(
+          scoutId,
+          'chatRequests',
+        )
+      ) {
+        this.sendBestEffortChatRequestEmail(
+          targetUser.email,
+          requesterName,
+          initialMessage,
+        );
+      }
     }
 
     return createdChat;
@@ -206,15 +238,30 @@ export class ChatService {
     if (playerId && playerId !== scoutId) {
       const scoutName = this.getDisplayName(chat.scout);
 
-      this.eventEmitter.emit('notification.create', {
-        userId: playerId,
-        title: 'Chat request accepted',
-        message: `${scoutName} accepted your chat request.`,
-        type: 'message',
-        referenceId: chat.id,
-      });
+      if (
+        await this.shouldSendChatInAppNotification(
+          playerId,
+          chat.id,
+          'chatAccepted',
+        )
+      ) {
+        this.eventEmitter.emit('notification.create', {
+          userId: playerId,
+          title: 'Chat request accepted',
+          message: `${scoutName} accepted your chat request.`,
+          type: 'message',
+          referenceId: chat.id,
+          preference: 'chatAccepted',
+        });
+      }
 
-      if (chat.player?.email) {
+      if (
+        chat.player?.email &&
+        (await this.notificationPreferencesService.allowsEmailNotification(
+          playerId,
+          'chatAccepted',
+        ))
+      ) {
         this.sendBestEffortChatAcceptedEmail(chat.player.email, scoutName);
       }
     }
@@ -265,10 +312,11 @@ export class ChatService {
     limit = 50,
     offset = 0,
   ): Promise<{ data: Message[]; total: number }> => {
-    await this.getChatById(chatId, userId);
+    const participant = await this.getParticipantOrThrow(chatId, userId);
+    const where = this.getVisibleMessageWhere(chatId, participant.clearedAt);
 
     const [data, total] = await this.messageRepository.findAndCount({
-      where: { chat: { id: chatId } },
+      where,
       relations: ['sender'],
       order: { createdAt: 'DESC' },
       take: limit,
@@ -285,7 +333,7 @@ export class ChatService {
   ): Promise<Message & { clientMessageId?: string }> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['scout', 'player'],
+      relations: ['scout', 'player', 'participants', 'participants.user'],
     });
 
     if (!chat) {
@@ -303,6 +351,11 @@ export class ChatService {
       throw HttpError.badRequest('Chat is pending approval');
     }
 
+    const recipientId =
+      chat.scout?.id === senderId ? chat.player?.id : chat.scout?.id;
+
+    this.assertChatNotBlocked(chat, senderId, recipientId);
+
     const message = this.messageRepository.create({
       chat,
       sender: { id: senderId } as User,
@@ -318,9 +371,6 @@ export class ChatService {
     chat.lastMessagePreview = dto.content?.slice(0, 120) ?? null;
     chat.unreadCount = (chat.unreadCount ?? 0) + 1;
     await this.chatRepository.save(chat);
-
-    const recipientId =
-      chat.scout?.id === senderId ? chat.player?.id : chat.scout?.id;
 
     if (recipientId) {
       await this.participantRepository
@@ -356,13 +406,22 @@ export class ChatService {
       chat: updatedChat,
     });
 
-    if (recipientId && recipientId !== senderId) {
+    if (
+      recipientId &&
+      recipientId !== senderId &&
+      (await this.shouldSendChatInAppNotification(
+        recipientId,
+        chatId,
+        'chatMessages',
+      ))
+    ) {
       this.eventEmitter.emit('notification.create', {
         userId: recipientId,
         title: 'New message',
         message: `${this.getDisplayName(savedMessageWithSender.sender)}: ${dto.content}`,
         type: 'message',
         referenceId: chatId,
+        preference: 'chatMessages',
       });
     }
 
@@ -442,7 +501,7 @@ export class ChatService {
 
     const participant = await this.participantRepository.findOne({
       where: { chat: { id: chatId }, user: { id: userId } },
-      relations: ['chat', 'user'],
+      relations: ['chat', 'chat.scout', 'chat.player', 'user'],
     });
 
     if (!participant) {
@@ -461,14 +520,184 @@ export class ChatService {
 
     const participant = await this.participantRepository.findOne({
       where: { chat: { id: chatId }, user: { id: userId } },
-      relations: ['chat', 'user'],
+      relations: ['chat', 'chat.scout', 'chat.player', 'user'],
     });
 
     if (!participant) {
       throw HttpError.notFound('Participant not found');
     }
 
+    const otherUserId = this.getOtherUserId(participant.chat, userId);
+    if (otherUserId) {
+      const existingBlock = await this.blockRepository.findOne({
+        where: { blockerId: userId, blockedId: otherUserId },
+      });
+
+      if (!existingBlock) {
+        await this.blockRepository.save(
+          this.blockRepository.create({
+            blockerId: userId,
+            blockedId: otherUserId,
+          }),
+        );
+      }
+    }
+
     participant.status = 'blocked';
     return this.participantRepository.save(participant);
   };
+
+  setChatMuted = async (
+    chatId: string,
+    userId: string,
+    muted: boolean,
+  ): Promise<ChatParticipant> => {
+    const participant = await this.getParticipantOrThrow(chatId, userId);
+    participant.notificationsMuted = muted;
+    return this.participantRepository.save(participant);
+  };
+
+  clearChat = async (chatId: string, userId: string): Promise<void> => {
+    const participant = await this.getParticipantOrThrow(chatId, userId);
+    participant.clearedAt = new Date();
+    participant.unreadCount = 0;
+    await this.participantRepository.save(participant);
+
+    await this.messageRepository
+      .createQueryBuilder()
+      .update(Message)
+      .set({ readAt: () => 'NOW()' })
+      .where('chat_id = :chatId', { chatId })
+      .andWhere('sender_id != :userId', { userId })
+      .andWhere('read_at IS NULL')
+      .execute();
+  };
+
+  reportChat = async (
+    chatId: string,
+    userId: string,
+    dto: ReportChatDto,
+  ): Promise<Report> => {
+    const chat = await this.getChatById(chatId, userId);
+    const reportedUserId = this.getOtherUserId(chat, userId);
+
+    if (!reportedUserId) {
+      throw HttpError.badRequest('Cannot identify chat participant to report');
+    }
+
+    const description =
+      dto.description?.trim() ||
+      'User reported from chat settings without additional details.';
+
+    const report = this.reportRepository.create({
+      reporter: { id: userId } as User,
+      type: 'user',
+      title: 'Chat participant report',
+      description,
+      severity: 'medium',
+      reportedType: 'user',
+      reportedId: reportedUserId,
+      metadata: { chatId },
+    });
+
+    return this.reportRepository.save(report);
+  };
+
+  getChatMedia = async (chatId: string, userId: string): Promise<Message[]> => {
+    const participant = await this.getParticipantOrThrow(chatId, userId);
+    const where = this.getVisibleMessageWhere(chatId, participant.clearedAt);
+
+    return this.messageRepository.find({
+      where: {
+        ...where,
+        attachmentUrl: Not(IsNull()),
+      },
+      relations: ['sender'],
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+  };
+
+  private getVisibleMessageWhere(
+    chatId: string,
+    clearedAt?: Date | null,
+  ): FindOptionsWhere<Message> {
+    return {
+      chat: { id: chatId },
+      ...(clearedAt ? { createdAt: MoreThan(clearedAt) } : {}),
+    };
+  }
+
+  private async getParticipantOrThrow(
+    chatId: string,
+    userId: string,
+  ): Promise<ChatParticipant> {
+    await this.getChatById(chatId, userId);
+
+    const participant = await this.participantRepository.findOne({
+      where: { chat: { id: chatId }, user: { id: userId } },
+      relations: ['chat', 'chat.scout', 'chat.player', 'user'],
+    });
+
+    if (!participant) {
+      throw HttpError.notFound('Participant not found');
+    }
+
+    return participant;
+  }
+
+  private async shouldSendChatInAppNotification(
+    userId: string,
+    chatId: string,
+    preference: NotificationPreferenceKey,
+  ): Promise<boolean> {
+    const allowed =
+      await this.notificationPreferencesService.allowsInAppNotification(
+        userId,
+        preference,
+      );
+
+    if (!allowed) {
+      return false;
+    }
+
+    const participant = await this.participantRepository.findOne({
+      where: { chat: { id: chatId }, user: { id: userId } },
+    });
+
+    return !participant?.notificationsMuted;
+  }
+
+  private assertChatNotBlocked(
+    chat: Chat,
+    senderId: string,
+    recipientId?: string,
+  ) {
+    const participants = chat.participants ?? [];
+    const senderParticipant = participants.find(
+      participant => participant.user?.id === senderId,
+    );
+    const recipientParticipant = participants.find(
+      participant => participant.user?.id === recipientId,
+    );
+
+    if (
+      senderParticipant?.status === 'blocked' ||
+      recipientParticipant?.status === 'blocked'
+    ) {
+      throw HttpError.forbidden('Chat is blocked');
+    }
+  }
+
+  private getOtherUserId(chat: Chat, userId: string): string | undefined {
+    if (chat.scout?.id === userId) {
+      return chat.player?.id;
+    }
+
+    if (chat.player?.id === userId) {
+      return chat.scout?.id;
+    }
+
+    return undefined;
+  }
 }

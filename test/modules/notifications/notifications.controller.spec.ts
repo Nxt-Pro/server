@@ -9,6 +9,8 @@ describe('NotificationsController', () => {
     getUserNotifications: jest.Mock;
     markAllAsRead: jest.Mock;
     markAsRead: jest.Mock;
+    getPreferences: jest.Mock;
+    updatePreferences: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -16,6 +18,8 @@ describe('NotificationsController', () => {
       getUserNotifications: jest.fn(),
       markAllAsRead: jest.fn(),
       markAsRead: jest.fn(),
+      getPreferences: jest.fn(),
+      updatePreferences: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -63,5 +67,41 @@ describe('NotificationsController', () => {
 
     expect(service.markAsRead).toHaveBeenCalledWith('notif_1', 'user_1');
     expect(res).toEqual({ affected: 1 });
+  });
+
+  it('getPreferences calls service', async () => {
+    const preferences = {
+      inAppNotifications: true,
+      emailNotifications: true,
+      chatRequests: true,
+      chatMessages: true,
+      chatAccepted: true,
+    };
+    service.getPreferences.mockResolvedValue(preferences);
+
+    const res = await controller.getPreferences('user_1');
+
+    expect(service.getPreferences).toHaveBeenCalledWith('user_1');
+    expect(res).toBe(preferences);
+  });
+
+  it('updatePreferences saves and returns preferences', async () => {
+    const preferences = {
+      inAppNotifications: false,
+      emailNotifications: true,
+      chatRequests: true,
+      chatMessages: true,
+      chatAccepted: true,
+    };
+    service.updatePreferences.mockResolvedValue(preferences);
+
+    const res = await controller.updatePreferences('user_1', {
+      inAppNotifications: false,
+    });
+
+    expect(service.updatePreferences).toHaveBeenCalledWith('user_1', {
+      inAppNotifications: false,
+    });
+    expect(res).toBe(preferences);
   });
 });

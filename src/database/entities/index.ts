@@ -25,6 +25,7 @@ export * from './report.entity';
 export * from './scout-notes.entity';
 export * from './scout-profile.entity';
 export * from './user.entity';
+export * from './user-notification-preference.entity';
 export * from './venue.entity';
 export * from './video-skill-analysis.entity';
 export * from './video.entity';

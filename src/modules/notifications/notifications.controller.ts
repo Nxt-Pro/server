@@ -12,6 +12,7 @@ import { IsNotEmpty, IsString } from 'class-validator';
 import { NotificationsService } from './notifications.service';
 import { HttpError } from '@/common/utils';
 import { CurrentUser } from '@/common/decorators';
+import { UpdateNotificationPreferencesDto } from '@/modules/settings/dto';
 
 class RegisterDeviceDto {
   @IsString()
@@ -64,6 +65,21 @@ export class NotificationsController {
   async getUnreadCount(@CurrentUser('sub') userId: string) {
     if (!userId) throw HttpError.unauthorized();
     return { count: await this.notificationsService.getUnreadCount(userId) };
+  }
+
+  @Get('preferences')
+  async getPreferences(@CurrentUser('sub') userId: string) {
+    if (!userId) throw HttpError.unauthorized();
+    return this.notificationsService.getPreferences(userId);
+  }
+
+  @Patch('preferences')
+  async updatePreferences(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    if (!userId) throw HttpError.unauthorized();
+    return this.notificationsService.updatePreferences(userId, dto);
   }
 
   @Patch('read-all')

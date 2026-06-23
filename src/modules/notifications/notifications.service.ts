@@ -4,6 +4,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { FirebaseService } from '@/integrations/firebase/firebase.service';
 import { Notification, User } from '@/database/entities';
+import {
+  NotificationPreferenceKey,
+  NotificationPreferencesService,
+} from '@/modules/settings';
+import { UpdateNotificationPreferencesDto } from '@/modules/settings/dto';
 
 export interface CreateNotificationEvent {
   userId: string;
@@ -18,6 +23,7 @@ export interface CreateNotificationEvent {
     | 'marketing'
     | 'new_event';
   referenceId?: string;
+  preference?: NotificationPreferenceKey;
 }
 
 export interface NotificationCreatedEvent {
@@ -45,6 +51,7 @@ export class NotificationsService {
     private readonly userRepo: Repository<User>,
     private readonly firebaseService: FirebaseService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
 
   /**
@@ -58,6 +65,19 @@ export class NotificationsService {
       this.logger.log(
         `Creating notification for user ${payload.userId}: ${payload.type}`,
       );
+
+      const allowed =
+        await this.notificationPreferencesService.allowsInAppNotification(
+          payload.userId,
+          payload.preference,
+        );
+
+      if (!allowed) {
+        this.logger.log(
+          `Notification preference suppressed ${payload.type} for user ${payload.userId}`,
+        );
+        return;
+      }
 
       // 1. Save to Database
       const notification = this.notificationRepo.create({
@@ -140,6 +160,17 @@ export class NotificationsService {
     return this.notificationRepo.count({
       where: { user: { id: userId }, readAt: IsNull() },
     });
+  };
+
+  getPreferences = async (userId: string) => {
+    return this.notificationPreferencesService.getForUser(userId);
+  };
+
+  updatePreferences = async (
+    userId: string,
+    dto: UpdateNotificationPreferencesDto,
+  ) => {
+    return this.notificationPreferencesService.updateForUser(userId, dto);
   };
 
   markAllAsRead = async (userId: string) => {

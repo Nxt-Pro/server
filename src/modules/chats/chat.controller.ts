@@ -8,7 +8,12 @@ import {
   Query,
 } from '@nestjs/common';
 import { ChatService } from './chat.service';
-import { SendMessageDto, StartChatDto } from './dtos';
+import {
+  ReportChatDto,
+  SendMessageDto,
+  StartChatDto,
+  UpdateChatMuteDto,
+} from './dtos';
 import { CurrentUser } from '@/common/decorators';
 
 @Controller('chat')
@@ -91,5 +96,40 @@ export class ChatController {
     @Param('id') chatId: string,
   ) {
     return this.chatService.blockChat(chatId, userId);
+  }
+
+  @Patch(':id/mute')
+  async muteChat(
+    @CurrentUser('sub') userId: string,
+    @Param('id') chatId: string,
+    @Body() dto: UpdateChatMuteDto,
+  ) {
+    return this.chatService.setChatMuted(chatId, userId, dto.muted);
+  }
+
+  @Post(':id/clear')
+  async clearChat(
+    @CurrentUser('sub') userId: string,
+    @Param('id') chatId: string,
+  ) {
+    await this.chatService.clearChat(chatId, userId);
+    return { success: true };
+  }
+
+  @Post(':id/report')
+  async reportChat(
+    @CurrentUser('sub') userId: string,
+    @Param('id') chatId: string,
+    @Body() dto: ReportChatDto,
+  ) {
+    return this.chatService.reportChat(chatId, userId, dto);
+  }
+
+  @Get(':id/media')
+  async getChatMedia(
+    @CurrentUser('sub') userId: string,
+    @Param('id') chatId: string,
+  ) {
+    return this.chatService.getChatMedia(chatId, userId);
   }
 }

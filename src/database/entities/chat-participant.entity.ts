@@ -22,4 +22,10 @@ export class ChatParticipant extends BaseEntity {
     default: 'pending',
   })
   status: 'pending' | 'active' | 'archived' | 'blocked';
+
+  @Column({ type: 'boolean', default: false, name: 'notifications_muted' })
+  notificationsMuted: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'cleared_at' })
+  clearedAt: Date | null;
 }
