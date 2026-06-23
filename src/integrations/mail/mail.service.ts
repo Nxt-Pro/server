@@ -122,4 +122,29 @@ This code will expire in 10 minutes. If you did not attempt to sign in, you can 
 
     await this.sendMail({ to: email, subject, text, html });
   }
+
+  async sendChatRequestEmail(
+    email: string,
+    requesterName: string,
+    messagePreview?: string,
+  ): Promise<void> {
+    const subject = 'New chat request on NxtPro';
+    const preview = messagePreview
+      ? `\n\nMessage preview:\n"${messagePreview}"`
+      : '';
+    const text = `${requesterName} requested to chat with you on NxtPro.${preview}
+
+Open NxtPro to review and respond to the request.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendChatAcceptedEmail(email: string, scoutName: string): Promise<void> {
+    const subject = 'Your NxtPro chat request was accepted';
+    const text = `${scoutName} accepted your chat request on NxtPro.
+
+Open NxtPro to continue the conversation.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
 }

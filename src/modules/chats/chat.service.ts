@@ -1,13 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SendMessageDto, StartChatDto } from './dtos';
 import { Chat, ChatParticipant, Message, User } from '@/database/entities';
+import { MailService } from '@/integrations/mail/mail.service';
 import { HttpError } from '@/common/utils';
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @InjectRepository(Chat)
     private readonly chatRepository: Repository<Chat>,
@@ -18,6 +21,7 @@ export class ChatService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly eventEmitter: EventEmitter2,
+    private readonly mailService: MailService,
   ) {}
   private getUserOrThrow = async (userId?: string) => {
     if (!userId) {
@@ -134,6 +138,8 @@ export class ChatService {
     });
 
     if (!isScoutInitiator) {
+      const requesterName = this.getDisplayName(initiator);
+
       this.eventEmitter.emit('chat.requested', {
         scoutId,
         playerId,
@@ -146,11 +152,17 @@ export class ChatService {
         userId: scoutId,
         title: 'New chat request',
         message: initialMessage
-          ? `${this.getDisplayName(initiator)}: ${initialMessage}`
-          : `${this.getDisplayName(initiator)} requested to chat with you.`,
+          ? `${requesterName}: ${initialMessage}`
+          : `${requesterName} requested to chat with you.`,
         type: 'message',
         referenceId: createdChat.id,
       });
+
+      this.sendBestEffortChatRequestEmail(
+        targetUser.email,
+        requesterName,
+        initialMessage,
+      );
     }
 
     return createdChat;
@@ -189,6 +201,23 @@ export class ChatService {
       scoutId,
       playerId: chat.player?.id,
     });
+
+    const playerId = chat.player?.id;
+    if (playerId && playerId !== scoutId) {
+      const scoutName = this.getDisplayName(chat.scout);
+
+      this.eventEmitter.emit('notification.create', {
+        userId: playerId,
+        title: 'Chat request accepted',
+        message: `${scoutName} accepted your chat request.`,
+        type: 'message',
+        referenceId: chat.id,
+      });
+
+      if (chat.player?.email) {
+        this.sendBestEffortChatAcceptedEmail(chat.player.email, scoutName);
+      }
+    }
 
     return this.chatRepository.findOneOrFail({
       where: { id: chatId },
@@ -327,7 +356,7 @@ export class ChatService {
       chat: updatedChat,
     });
 
-    if (recipientId) {
+    if (recipientId && recipientId !== senderId) {
       this.eventEmitter.emit('notification.create', {
         userId: recipientId,
         title: 'New message',
@@ -342,6 +371,41 @@ export class ChatService {
 
   private getDisplayName(user?: User | null): string {
     return user?.username || user?.email || 'Someone';
+  }
+
+  private sendBestEffortChatRequestEmail(
+    email: string | undefined,
+    requesterName: string,
+    messagePreview?: string,
+  ): void {
+    if (!email) return;
+
+    void this.mailService
+      .sendChatRequestEmail(email, requesterName, messagePreview)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send chat request email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private sendBestEffortChatAcceptedEmail(
+    email: string | undefined,
+    scoutName: string,
+  ): void {
+    if (!email) return;
+
+    void this.mailService
+      .sendChatAcceptedEmail(email, scoutName)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send chat accepted email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown error';
   }
 
   markChatRead = async (chatId: string, userId: string): Promise<void> => {
