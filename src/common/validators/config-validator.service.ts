@@ -608,8 +608,21 @@ export class ConfigValidatorService {
         .min(1)
         .max(5000)
         .default(500),
+      MAX_AUDIO_SIZE_MB: Yup.number()
+        .transform((_, originalValue) => {
+          if (originalValue === '' || originalValue === undefined) {
+            return undefined;
+          }
+          return Number(originalValue);
+        })
+        .min(1)
+        .max(500)
+        .default(50),
       ALLOWED_VIDEO_FORMATS: Yup.string().default(
         'mp4,mov,m4v,avi,webm,mkv,3gp',
+      ),
+      ALLOWED_AUDIO_FORMATS: Yup.string().default(
+        'mp3,m4a,aac,wav,ogg,oga,flac,webm',
       ),
 
       // AI scoring

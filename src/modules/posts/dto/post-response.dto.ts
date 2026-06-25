@@ -12,6 +12,13 @@ export class PostAuthorResponseDto {
   isVerified?: boolean;
 }
 
+export class PostMusicResponseDto {
+  url: string;
+  title: string | null;
+  artist: string | null;
+  durationMs: number | null;
+}
+
 export class PostResponseDto {
   id: string;
   userId: string;
@@ -25,6 +32,7 @@ export class PostResponseDto {
   isBookmarked: boolean;
   visibility: 'public' | 'connections' | 'private';
   isHighlight: boolean;
+  music: PostMusicResponseDto | null;
   attachments?: AttachmentResponseDto[];
   createdAt: string;
   updatedAt: string;

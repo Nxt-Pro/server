@@ -21,7 +21,7 @@ export class Post extends BaseEntity {
   userId: string;
 
   @Column('text', { nullable: true })
-  caption: string;
+  caption: string | null;
 
   @Column('boolean', {
     default: false,
@@ -65,6 +65,33 @@ export class Post extends BaseEntity {
     default: 'public',
   })
   visibility: 'public' | 'connections' | 'private';
+
+  @Column('varchar', {
+    nullable: true,
+    name: 'music_url',
+    length: 2048,
+  })
+  musicUrl?: string | null;
+
+  @Column('varchar', {
+    nullable: true,
+    name: 'music_title',
+    length: 160,
+  })
+  musicTitle?: string | null;
+
+  @Column('varchar', {
+    nullable: true,
+    name: 'music_artist',
+    length: 160,
+  })
+  musicArtist?: string | null;
+
+  @Column('integer', {
+    nullable: true,
+    name: 'music_duration_ms',
+  })
+  musicDurationMs?: number | null;
 
   @Column('boolean', {
     default: false,

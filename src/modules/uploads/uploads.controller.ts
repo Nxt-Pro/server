@@ -44,7 +44,7 @@ export class UploadsController {
       file?: unknown;
       files?: unknown[] | Record<string, unknown>;
     },
-    @Body('resourceType') resourceType?: 'image' | 'video',
+    @Body('resourceType') resourceType?: 'image' | 'video' | 'audio',
   ) {
     const requestFiles = req?.files;
     const fallbackFiles = Array.isArray(requestFiles)

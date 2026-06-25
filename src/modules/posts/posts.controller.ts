@@ -16,6 +16,7 @@ import {
   CreateCommentDto,
   CreatePostDto,
   ReportPostDto,
+  UpdatePostDto,
   UpdateVideoDto,
 } from './dto';
 import { PostsService } from './posts.service';
@@ -141,6 +142,15 @@ export class PostsController {
     return { message: 'Post deleted' };
   }
 
+  @Patch(':id')
+  updatePost(
+    @Param('id') postId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdatePostDto,
+  ) {
+    return this.postsService.updatePost(postId, user.sub, dto);
+  }
+
   @Get(':id')
   @Public()
   getPost(
@@ -207,8 +217,15 @@ export class PostsController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('mine') mine?: string,
+    @Query('userId') targetUserId?: string,
   ) {
     const onlyMine = Boolean(user?.sub) && mine !== 'false' && mine !== '0';
-    return this.postsService.listPosts(user?.sub, page, limit, onlyMine);
+    return this.postsService.listPosts(
+      user?.sub,
+      page,
+      limit,
+      onlyMine,
+      targetUserId,
+    );
   }
 }

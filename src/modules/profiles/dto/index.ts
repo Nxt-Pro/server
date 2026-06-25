@@ -2,6 +2,7 @@ export * from './block-user.dto';
 export * from './discovery-query.dto';
 export * from './mute-user.dto';
 export * from './paginated-discovery.dto';
+export * from './player-profile-content.dto';
 export * from './player-profile-response.dto';
 export * from './scout-note.dto';
 export * from './scout-profile-response.dto';

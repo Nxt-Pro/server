@@ -12,9 +12,13 @@ const baseUploadConfig: UploadConfig = {
   cdnBaseUrl: undefined,
   maxVideoSizeMB: 500,
   maxVideoSizeBytes: 500 * 1024 * 1024,
+  maxAudioSizeMB: 50,
+  maxAudioSizeBytes: 50 * 1024 * 1024,
   allowedVideoFormats: ['mp4'],
+  allowedAudioFormats: ['mp3'],
   allowedImageMimeTypes: ['image/jpeg'],
-  allowedMimeTypes: ['video/mp4', 'image/jpeg'],
+  allowedAudioMimeTypes: ['audio/mpeg'],
+  allowedMimeTypes: ['video/mp4', 'image/jpeg', 'audio/mpeg'],
 };
 
 const createService = (overrides: Partial<UploadConfig> = {}) =>

@@ -1,6 +1,5 @@
 import {
-  ArrayMaxSize,
-  IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,22 +10,16 @@ import {
 
 import { IsUrl } from '@/common/validators/url.validator';
 
-export class CreatePostDto {
+export class UpdatePostDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  caption?: string;
+  caption?: string | null;
 
   @IsOptional()
   @IsString()
+  @IsIn(['public', 'connections', 'private'])
   visibility?: 'public' | 'connections' | 'private';
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsString({ each: true })
-  @MaxLength(2048, { each: true })
-  mediaUrls?: string[];
 
   @IsOptional()
   @IsString()

@@ -5,16 +5,26 @@ export interface UploadConfig {
   cdnBaseUrl?: string;
   maxVideoSizeMB: number;
   maxVideoSizeBytes: number;
+  maxAudioSizeMB: number;
+  maxAudioSizeBytes: number;
   allowedVideoFormats: string[];
+  allowedAudioFormats: string[];
   allowedImageMimeTypes: string[];
+  allowedAudioMimeTypes: string[];
   allowedMimeTypes: string[];
 }
 
 export const uploadConfig = (): UploadConfig => {
   const port = process.env.PORT || '3000';
   const maxSizeMB = parseInt(process.env.MAX_VIDEO_SIZE_MB || '500', 10);
-  const formats = (
+  const maxAudioSizeMB = parseInt(process.env.MAX_AUDIO_SIZE_MB || '50', 10);
+  const videoFormats = (
     process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mov,m4v,avi,webm,mkv,3gp'
+  )
+    .split(',')
+    .map(f => f.trim().toLowerCase());
+  const audioFormats = (
+    process.env.ALLOWED_AUDIO_FORMATS || 'mp3,m4a,aac,wav,ogg,oga,flac,webm'
   )
     .split(',')
     .map(f => f.trim().toLowerCase());
@@ -31,6 +41,17 @@ export const uploadConfig = (): UploadConfig => {
     flv: 'video/x-flv',
     wmv: 'video/x-ms-wmv',
   };
+  const audioFormatToMime: Record<string, string> = {
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    wav: 'audio/wav',
+    wave: 'audio/wav',
+    ogg: 'audio/ogg',
+    oga: 'audio/ogg',
+    flac: 'audio/flac',
+    webm: 'audio/webm',
+  };
 
   const allowedImageMimeTypes = [
     'image/jpeg',
@@ -41,8 +62,11 @@ export const uploadConfig = (): UploadConfig => {
     'image/heif',
   ];
 
-  const allowedVideoMimeTypes = formats
+  const allowedVideoMimeTypes = videoFormats
     .map(format => formatToMime[format])
+    .filter(Boolean);
+  const allowedAudioMimeTypes = audioFormats
+    .map(format => audioFormatToMime[format])
     .filter(Boolean);
 
   return {
@@ -54,8 +78,16 @@ export const uploadConfig = (): UploadConfig => {
     cdnBaseUrl: process.env.CDN_BASE_URL?.trim() || undefined,
     maxVideoSizeMB: maxSizeMB,
     maxVideoSizeBytes: maxSizeMB * 1024 * 1024,
-    allowedVideoFormats: formats,
+    maxAudioSizeMB,
+    maxAudioSizeBytes: maxAudioSizeMB * 1024 * 1024,
+    allowedVideoFormats: videoFormats,
+    allowedAudioFormats: audioFormats,
     allowedImageMimeTypes,
-    allowedMimeTypes: [...allowedVideoMimeTypes, ...allowedImageMimeTypes],
+    allowedAudioMimeTypes,
+    allowedMimeTypes: [
+      ...allowedVideoMimeTypes,
+      ...allowedImageMimeTypes,
+      ...allowedAudioMimeTypes,
+    ],
   };
 };

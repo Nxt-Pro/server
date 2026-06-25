@@ -22,6 +22,7 @@ import type {
   PostResponseDto,
   ReportPostDto,
   ShareResponseDto,
+  UpdatePostDto,
   UpdateVideoDto,
   VideoResponseDto,
 } from './dto';
@@ -121,6 +122,7 @@ export class PostsService {
           userId,
           caption: dto.caption ?? undefined,
           visibility: dto.visibility ?? 'public',
+          ...this.normalizeMusicCreateInput(dto),
         });
         await manager.getRepository(Post).save(post);
 
@@ -176,6 +178,44 @@ export class PostsService {
     }
 
     return this.toPostResponse(createdPost);
+  }
+
+  async updatePost(
+    postId: string,
+    userId: string,
+    dto: UpdatePostDto,
+  ): Promise<PostResponseDto> {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: [
+        'attachments',
+        'attachments.video',
+        'user',
+        'user.playerProfile',
+        'user.scoutProfile',
+      ],
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (post.userId !== userId) {
+      throw new ForbiddenException('You can only update your own posts');
+    }
+
+    if (dto.caption !== undefined) {
+      post.caption = dto.caption?.trim() || null;
+    }
+
+    if (dto.visibility !== undefined) {
+      post.visibility = dto.visibility;
+    }
+
+    this.applyMusicUpdate(post, dto);
+
+    const saved = await this.postRepository.save(post);
+    return this.toPostResponse(saved);
   }
 
   async createAiVideo(
@@ -315,6 +355,7 @@ export class PostsService {
     page: number,
     limit: number,
     onlyMine = true,
+    targetUserId?: string,
   ): Promise<PaginatedPostsDto> {
     const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
@@ -327,7 +368,17 @@ export class PostsService {
       .leftJoinAndSelect('u.scoutProfile', 'usp')
       .orderBy('p.createdAt', 'DESC');
 
-    if (onlyMine && userId) {
+    if (targetUserId) {
+      qb.where('p.userId = :targetUserId', { targetUserId });
+      if (targetUserId !== userId) {
+        qb.andWhere('p.visibility = :publicVisibility', {
+          publicVisibility: 'public',
+        });
+      }
+      if (hiddenUserIds.includes(targetUserId)) {
+        qb.andWhere('1 = 0');
+      }
+    } else if (onlyMine && userId) {
       qb.where('p.userId = :userId', { userId });
     } else if (!userId) {
       qb.where('p.visibility = :publicVisibility', {
@@ -855,6 +906,106 @@ export class PostsService {
     return isVideo ? 'video' : 'image';
   }
 
+  private normalizeMusicCreateInput(
+    dto: CreatePostDto,
+  ): Partial<
+    Pick<Post, 'musicUrl' | 'musicTitle' | 'musicArtist' | 'musicDurationMs'>
+  > {
+    const hasMusicMetadata =
+      dto.musicTitle !== undefined ||
+      dto.musicArtist !== undefined ||
+      dto.musicDurationMs !== undefined;
+
+    if (dto.musicUrl == null || String(dto.musicUrl).trim() === '') {
+      if (hasMusicMetadata) {
+        throw new BadRequestException(
+          'Music URL is required when music metadata is provided.',
+        );
+      }
+
+      return {};
+    }
+
+    const musicUrl = this.ensureAudioMediaUrl(dto.musicUrl);
+
+    return {
+      musicUrl,
+      musicTitle: this.normalizeNullableString(dto.musicTitle),
+      musicArtist: this.normalizeNullableString(dto.musicArtist),
+      musicDurationMs: this.normalizeNullableDuration(dto.musicDurationMs),
+    };
+  }
+
+  private applyMusicUpdate(post: Post, dto: UpdatePostDto): void {
+    if (
+      dto.musicUrl === undefined &&
+      dto.musicTitle === undefined &&
+      dto.musicArtist === undefined &&
+      dto.musicDurationMs === undefined
+    ) {
+      return;
+    }
+
+    if (dto.musicUrl === null || dto.musicUrl === '') {
+      post.musicUrl = null;
+      post.musicTitle = null;
+      post.musicArtist = null;
+      post.musicDurationMs = null;
+      return;
+    }
+
+    if (dto.musicUrl !== undefined) {
+      post.musicUrl = this.ensureAudioMediaUrl(dto.musicUrl);
+    }
+
+    if (!post.musicUrl) {
+      throw new BadRequestException(
+        'Music URL is required when music metadata is provided.',
+      );
+    }
+
+    if (dto.musicTitle !== undefined) {
+      post.musicTitle = this.normalizeNullableString(dto.musicTitle);
+    }
+    if (dto.musicArtist !== undefined) {
+      post.musicArtist = this.normalizeNullableString(dto.musicArtist);
+    }
+    if (dto.musicDurationMs !== undefined) {
+      post.musicDurationMs = this.normalizeNullableDuration(
+        dto.musicDurationMs,
+      );
+    }
+  }
+
+  private normalizeNullableString(
+    value: string | null | undefined,
+  ): string | null {
+    if (value == null) return null;
+    const trimmed = String(value).trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private normalizeNullableDuration(
+    value: number | null | undefined,
+  ): number | null {
+    if (value == null) return null;
+    const duration = Number(value);
+    if (!Number.isFinite(duration) || duration < 0) {
+      throw new BadRequestException('Music duration must be zero or greater.');
+    }
+    return Math.round(duration);
+  }
+
+  private ensureAudioMediaUrl(url: string): string {
+    const normalized = this.ensureDurableMediaUrl(url);
+    if (!/\.(mp3|m4a|aac|wav|ogg|oga|flac|webm)(\?|#|$)/i.test(normalized)) {
+      throw new BadRequestException(
+        'Music URL must point to a supported audio file.',
+      );
+    }
+    return normalized;
+  }
+
   private ensureDurableMediaUrl(url: string): string {
     const normalized = url.trim();
 
@@ -945,6 +1096,14 @@ export class PostsService {
       isBookmarked: engagement.isBookmarked ?? false,
       visibility: post.visibility,
       isHighlight: post.isHighlight,
+      music: post.musicUrl
+        ? {
+            url: this.resolveMediaUrl(post.musicUrl) ?? post.musicUrl,
+            title: post.musicTitle ?? null,
+            artist: post.musicArtist ?? null,
+            durationMs: post.musicDurationMs ?? null,
+          }
+        : null,
       attachments,
       createdAt: post.createdAt.toISOString(),
       updatedAt: post.updatedAt.toISOString(),

@@ -41,6 +41,14 @@ export const uploadSchema = Yup.object({
     .max(5000, 'MAX_VIDEO_SIZE_MB cannot exceed 5000MB (5GB)')
     .default(500),
 
+  MAX_AUDIO_SIZE_MB: Yup.number()
+    .transform((_, orig) =>
+      orig === undefined || orig === '' ? undefined : Number(orig),
+    )
+    .min(1, 'MAX_AUDIO_SIZE_MB must be at least 1MB')
+    .max(500, 'MAX_AUDIO_SIZE_MB cannot exceed 500MB')
+    .default(50),
+
   ALLOWED_VIDEO_FORMATS: Yup.string()
     .default('mp4,mov,m4v,avi,webm,mkv,3gp')
     .test(
@@ -60,6 +68,29 @@ export const uploadSchema = Yup.object({
           '3gpp',
           'flv',
           'wmv',
+        ];
+        return formats.every(format => validFormats.includes(format));
+      },
+    ),
+
+  ALLOWED_AUDIO_FORMATS: Yup.string()
+    .default('mp3,m4a,aac,wav,ogg,oga,flac,webm')
+    .test(
+      'valid-audio-formats',
+      'ALLOWED_AUDIO_FORMATS must be a comma-separated list of audio formats (e.g., mp3,m4a,wav)',
+      value => {
+        if (!value) return false;
+        const formats = value.split(',').map(f => f.trim().toLowerCase());
+        const validFormats = [
+          'mp3',
+          'm4a',
+          'aac',
+          'wav',
+          'wave',
+          'ogg',
+          'oga',
+          'flac',
+          'webm',
         ];
         return formats.every(format => validFormats.includes(format));
       },

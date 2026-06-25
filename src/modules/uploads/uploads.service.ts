@@ -15,7 +15,7 @@ import { UploadConfig } from '@/config';
 interface UploadResult {
   url: string;
   fileName: string;
-  contentType: 'image' | 'video';
+  contentType: 'image' | 'video' | 'audio';
   mimeType: string;
   size: number;
 }
@@ -44,7 +44,18 @@ const MIME_EXTENSION_MAP: Record<string, string[]> = {
   'video/3gpp': ['3gp', '3gpp'],
   'video/x-flv': ['flv'],
   'video/x-ms-wmv': ['wmv'],
+  'audio/mpeg': ['mp3'],
+  'audio/mp4': ['m4a'],
+  'audio/x-m4a': ['m4a'],
+  'audio/aac': ['aac'],
+  'audio/wav': ['wav'],
+  'audio/x-wav': ['wav'],
+  'audio/ogg': ['ogg', 'oga'],
+  'audio/webm': ['webm'],
+  'audio/flac': ['flac'],
 };
+
+type UploadResourceType = 'image' | 'video' | 'audio';
 
 @Injectable()
 export class UploadsService {
@@ -59,7 +70,7 @@ export class UploadsService {
 
   async storeUploadedFile(
     file: unknown,
-    resourceType?: 'image' | 'video',
+    resourceType?: UploadResourceType,
   ): Promise<UploadResult> {
     const normalizedFile = this.toUploadableFile(file);
 
@@ -78,9 +89,19 @@ export class UploadsService {
         throw new BadRequestException('Uploaded file is empty.');
       }
 
-      if (size > this.uploadConfig.maxVideoSizeBytes) {
+      const detectedType = this.detectResourceType(mimeType);
+      const maxSizeBytes =
+        detectedType === 'audio'
+          ? this.uploadConfig.maxAudioSizeBytes
+          : this.uploadConfig.maxVideoSizeBytes;
+      const maxSizeMB =
+        detectedType === 'audio'
+          ? this.uploadConfig.maxAudioSizeMB
+          : this.uploadConfig.maxVideoSizeMB;
+
+      if (size > maxSizeBytes) {
         throw new BadRequestException(
-          `File is too large. Max allowed size is ${this.uploadConfig.maxVideoSizeMB}MB.`,
+          `File is too large. Max allowed size is ${maxSizeMB}MB.`,
         );
       }
 
@@ -89,10 +110,6 @@ export class UploadsService {
           'Cloud upload storage is configured, but no cloud storage adapter is implemented.',
         );
       }
-
-      const detectedType: 'image' | 'video' = mimeType.startsWith('video/')
-        ? 'video'
-        : 'image';
 
       if (resourceType && resourceType !== detectedType) {
         throw new BadRequestException(
@@ -106,7 +123,12 @@ export class UploadsService {
         detectedType,
       );
       const fileName = `${ulid()}.${extension}`;
-      const folder = detectedType === 'video' ? 'videos' : 'images';
+      const folder =
+        detectedType === 'video'
+          ? 'videos'
+          : detectedType === 'audio'
+            ? 'audio'
+            : 'images';
 
       const relativePath = `${folder}/${fileName}`;
       const targetDir = join(
@@ -151,7 +173,7 @@ export class UploadsService {
   private resolveExtension(
     originalName: string,
     mimeType: string,
-    detectedType: 'image' | 'video',
+    detectedType: UploadResourceType,
   ): string {
     const rawExt = extname(originalName).replace('.', '').trim().toLowerCase();
     const allowedExtensions = MIME_EXTENSION_MAP[mimeType] ?? [];
@@ -164,7 +186,15 @@ export class UploadsService {
       return allowedExtensions[0];
     }
 
-    return detectedType === 'video' ? 'mp4' : 'jpg';
+    if (detectedType === 'video') return 'mp4';
+    if (detectedType === 'audio') return 'mp3';
+    return 'jpg';
+  }
+
+  private detectResourceType(mimeType: string): UploadResourceType {
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    return 'image';
   }
 
   private async cleanupTemporaryFile(file: UploadableFile): Promise<void> {

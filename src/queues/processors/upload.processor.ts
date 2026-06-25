@@ -82,7 +82,10 @@ export class UploadProcessor {
   private validateVideoFile(payload: VideoUploadJobPayload): void {
     this.logger.log(`Validating video file: ${payload.originalFileName}`);
 
-    if (!this.uploadConfig.allowedMimeTypes.includes(payload.mimeType)) {
+    if (
+      !payload.mimeType.startsWith('video/') ||
+      !this.uploadConfig.allowedMimeTypes.includes(payload.mimeType)
+    ) {
       throw new Error(
         `Invalid video format: ${payload.mimeType}. Allowed formats: ${this.uploadConfig.allowedVideoFormats.join(', ').toUpperCase()}`,
       );

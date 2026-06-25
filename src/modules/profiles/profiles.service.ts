@@ -7,11 +7,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, In, Raw, Repository } from 'typeorm';
 import type {
   CreateScoutNoteDto,
+  CreateAchievementDto,
+  CreateCareerTimelineDto,
   GlobalSearchQueryDto,
   ListPlayersQueryDto,
   ListScoutsQueryDto,
   PlayerProfileResponseDto,
   ScoutProfileResponseDto,
+  UpdateAchievementDto,
+  UpdateCareerTimelineDto,
   UpdatePlayerProfileDto,
   UpdatePlayerSkillScoreDto,
   UpdateScoutNoteDto,
@@ -173,6 +177,160 @@ export class ProfilesService {
     await this.playerProfileRepository.save(profile);
     const extras = await this.loadPlayerExtras([profile.userId]);
     return this.toPlayerProfileResponse(profile, extras.get(profile.userId));
+  }
+
+  async createCareerTimelineItem(
+    userId: string,
+    dto: CreateCareerTimelineDto,
+  ): Promise<PlayerProfileResponseDto> {
+    const profile = await this.getOwnedPlayerProfile(userId);
+    const item = this.careerTimelineRepository.create({
+      playerId: userId,
+      title: dto.title.trim(),
+      description: dto.description?.trim() || undefined,
+      startDate: new Date(dto.startDate),
+      endDate: dto.isCurrent
+        ? undefined
+        : dto.endDate
+          ? new Date(dto.endDate)
+          : undefined,
+      isCurrent: dto.isCurrent ?? false,
+      evidenceUrl: dto.evidenceUrl?.trim() || undefined,
+    });
+
+    await this.careerTimelineRepository.save(item);
+    profile.profileCompleteness =
+      await this.calculatePlayerCompleteness(profile);
+    await this.playerProfileRepository.save(profile);
+    return this.getPlayerProfile(userId);
+  }
+
+  async updateCareerTimelineItem(
+    userId: string,
+    timelineId: string,
+    dto: UpdateCareerTimelineDto,
+  ): Promise<PlayerProfileResponseDto> {
+    const profile = await this.getOwnedPlayerProfile(userId);
+    const item = await this.careerTimelineRepository.findOne({
+      where: { id: timelineId },
+    });
+    if (!item) {
+      throw new NotFoundException('Career timeline item not found');
+    }
+    if (item.playerId !== userId) {
+      throw new ForbiddenException('You can only edit your own timeline');
+    }
+
+    if (dto.title !== undefined) item.title = dto.title.trim();
+    if (dto.description !== undefined)
+      item.description = dto.description?.trim() || undefined;
+    if (dto.startDate !== undefined) item.startDate = new Date(dto.startDate);
+    if (dto.isCurrent !== undefined) item.isCurrent = dto.isCurrent;
+    if (dto.endDate !== undefined)
+      item.endDate = item.isCurrent
+        ? undefined
+        : dto.endDate
+          ? new Date(dto.endDate)
+          : undefined;
+    if (item.isCurrent) item.endDate = undefined;
+    if (dto.evidenceUrl !== undefined)
+      item.evidenceUrl = dto.evidenceUrl?.trim() || undefined;
+
+    await this.careerTimelineRepository.save(item);
+    profile.profileCompleteness =
+      await this.calculatePlayerCompleteness(profile);
+    await this.playerProfileRepository.save(profile);
+    return this.getPlayerProfile(userId);
+  }
+
+  async deleteCareerTimelineItem(
+    userId: string,
+    timelineId: string,
+  ): Promise<PlayerProfileResponseDto> {
+    const profile = await this.getOwnedPlayerProfile(userId);
+    const item = await this.careerTimelineRepository.findOne({
+      where: { id: timelineId },
+    });
+    if (!item) {
+      throw new NotFoundException('Career timeline item not found');
+    }
+    if (item.playerId !== userId) {
+      throw new ForbiddenException('You can only delete your own timeline');
+    }
+
+    await this.careerTimelineRepository.remove(item);
+    profile.profileCompleteness =
+      await this.calculatePlayerCompleteness(profile);
+    await this.playerProfileRepository.save(profile);
+    return this.getPlayerProfile(userId);
+  }
+
+  async createAchievement(
+    userId: string,
+    dto: CreateAchievementDto,
+  ): Promise<PlayerProfileResponseDto> {
+    await this.getOwnedPlayerProfile(userId);
+    const achievement = this.achievementRepository.create({
+      playerId: userId,
+      title: dto.title.trim(),
+      description: dto.description.trim(),
+      year: dto.year,
+      competitionLevel: dto.competitionLevel,
+      evidenceUrl: dto.evidenceUrl?.trim() || undefined,
+      verified: false,
+    });
+
+    await this.achievementRepository.save(achievement);
+    return this.getPlayerProfile(userId);
+  }
+
+  async updateAchievement(
+    userId: string,
+    achievementId: string,
+    dto: UpdateAchievementDto,
+  ): Promise<PlayerProfileResponseDto> {
+    await this.getOwnedPlayerProfile(userId);
+    const achievement = await this.achievementRepository.findOne({
+      where: { id: achievementId },
+    });
+    if (!achievement) {
+      throw new NotFoundException('Achievement not found');
+    }
+    if (achievement.playerId !== userId) {
+      throw new ForbiddenException('You can only edit your own achievements');
+    }
+
+    if (dto.title !== undefined) achievement.title = dto.title.trim();
+    if (dto.description !== undefined)
+      achievement.description = dto.description.trim();
+    if (dto.year !== undefined) achievement.year = dto.year;
+    if (dto.competitionLevel !== undefined)
+      achievement.competitionLevel = dto.competitionLevel;
+    if (dto.evidenceUrl !== undefined)
+      achievement.evidenceUrl = dto.evidenceUrl?.trim() || undefined;
+    achievement.verified = false;
+
+    await this.achievementRepository.save(achievement);
+    return this.getPlayerProfile(userId);
+  }
+
+  async deleteAchievement(
+    userId: string,
+    achievementId: string,
+  ): Promise<PlayerProfileResponseDto> {
+    await this.getOwnedPlayerProfile(userId);
+    const achievement = await this.achievementRepository.findOne({
+      where: { id: achievementId },
+    });
+    if (!achievement) {
+      throw new NotFoundException('Achievement not found');
+    }
+    if (achievement.playerId !== userId) {
+      throw new ForbiddenException('You can only delete your own achievements');
+    }
+
+    await this.achievementRepository.remove(achievement);
+    return this.getPlayerProfile(userId);
   }
 
   async getScoutProfile(profileId: string): Promise<ScoutProfileResponseDto> {
@@ -842,6 +1000,23 @@ export class ProfilesService {
     return Math.max(0, Math.min(99, Math.round(avg * 100) / 100));
   }
 
+  private async getOwnedPlayerProfile(userId: string): Promise<PlayerProfile> {
+    const profile = await this.playerProfileRepository.findOne({
+      where: { userId },
+    });
+    if (!profile) {
+      throw new NotFoundException('Player profile not found');
+    }
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['role'],
+    });
+    if (!user || user.role !== 'player') {
+      throw new ForbiddenException('Only players can update player profile');
+    }
+    return profile;
+  }
+
   private toScoutProfileResponse(
     profile: ScoutProfile,
   ): ScoutProfileResponseDto {
@@ -882,33 +1057,27 @@ export class ProfilesService {
         ? ['diving', 'reflexes', 'handling', 'speed', 'kicking', 'positioning']
         : ['pace', 'dribbling', 'shooting', 'defending', 'passing', 'physical'];
 
-    const [
-      careerTimelineCount,
-      statsCount,
-      postCount,
-      videoCount,
-      analyzedCount,
-    ] = await Promise.all([
-      this.careerTimelineRepository.count({ where: { playerId: userId } }),
-      this.playerStatsRepository.count({ where: { playerId: userId } }),
-      this.postRepository.count({ where: { userId } }),
-      this.videoRepository
-        .createQueryBuilder('video')
-        .innerJoin('video.attachment', 'attachment')
-        .innerJoin('attachment.post', 'post')
-        .where('post.user_id = :userId', { userId })
-        .getCount(),
-      this.videoSkillAnalysisRepository
-        .createQueryBuilder('analysis')
-        .innerJoin('analysis.video', 'video')
-        .innerJoin('video.attachment', 'attachment')
-        .innerJoin('attachment.post', 'post')
-        .where('post.user_id = :userId', { userId })
-        .andWhere('analysis.status = :status', { status: 'completed' })
-        .andWhere("jsonb_typeof(analysis.ai_score) = 'object'")
-        .andWhere("analysis.ai_score <> '{}'::jsonb")
-        .getCount(),
-    ]);
+    const [careerTimelineCount, postCount, videoCount, analyzedCount] =
+      await Promise.all([
+        this.careerTimelineRepository.count({ where: { playerId: userId } }),
+        this.postRepository.count({ where: { userId } }),
+        this.videoRepository
+          .createQueryBuilder('video')
+          .innerJoin('video.attachment', 'attachment')
+          .innerJoin('attachment.post', 'post')
+          .where('post.user_id = :userId', { userId })
+          .getCount(),
+        this.videoSkillAnalysisRepository
+          .createQueryBuilder('analysis')
+          .innerJoin('analysis.video', 'video')
+          .innerJoin('video.attachment', 'attachment')
+          .innerJoin('attachment.post', 'post')
+          .where('post.user_id = :userId', { userId })
+          .andWhere('analysis.status = :status', { status: 'completed' })
+          .andWhere("jsonb_typeof(analysis.ai_score) = 'object'")
+          .andWhere("analysis.ai_score <> '{}'::jsonb")
+          .getCount(),
+      ]);
 
     const latestSkillAnalysis = await this.videoSkillAnalysisRepository
       .createQueryBuilder('analysis')
@@ -947,7 +1116,6 @@ export class ProfilesService {
       !!profile.availabilityStatus,
       profile.aiScore != null && Number(profile.aiScore) > 0,
       careerTimelineCount > 0,
-      statsCount > 0,
       postCount > 0,
       videoCount > 0,
       analyzedCount > 0,
