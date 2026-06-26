@@ -156,6 +156,13 @@ export class NotificationsService {
     );
   };
 
+  deleteNotification = async (notificationId: string, userId: string) => {
+    return this.notificationRepo.delete({
+      id: notificationId,
+      user: { id: userId },
+    });
+  };
+
   getUnreadCount = async (userId: string) => {
     return this.notificationRepo.count({
       where: { user: { id: userId }, readAt: IsNull() },
@@ -178,6 +185,10 @@ export class NotificationsService {
       { user: { id: userId }, readAt: IsNull() },
       { readAt: new Date() },
     );
+  };
+
+  clearAll = async (userId: string) => {
+    return this.notificationRepo.delete({ user: { id: userId } });
   };
 
   registerDeviceToken = async (userId: string, token: string) => {

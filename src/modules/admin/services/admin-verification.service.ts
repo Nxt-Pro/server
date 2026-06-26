@@ -4,13 +4,17 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ScoutVerificationStatus } from '@/common/enums';
 import { PlayerProfile, ScoutProfile } from '@/database/entities';
+import { MailService } from '@/integrations/mail/mail.service';
+import { NotificationPreferencesService } from '@/modules/settings';
 import {
   AuditLogRepository,
   PlayerProfileRepository,
   ScoutProfileRepository,
+  UserRepository,
 } from '@/database/repositories';
 
 export interface PendingPlayer {
@@ -43,15 +47,21 @@ export class AdminVerificationService {
   private readonly playerProfileRepository: PlayerProfileRepository;
   private readonly scoutProfileRepository: ScoutProfileRepository;
   private readonly auditLogRepository: AuditLogRepository;
+  private readonly userRepository: UserRepository;
 
   constructor(
     playerProfileRepository: PlayerProfileRepository,
     scoutProfileRepository: ScoutProfileRepository,
     auditLogRepository: AuditLogRepository,
+    userRepository: UserRepository,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly mailService: MailService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.playerProfileRepository = playerProfileRepository;
     this.scoutProfileRepository = scoutProfileRepository;
     this.auditLogRepository = auditLogRepository;
+    this.userRepository = userRepository;
   }
 
   /**
@@ -139,6 +149,7 @@ export class AdminVerificationService {
     });
 
     this.logger.log(`Player ${userId} verified by admin ${adminId}`);
+    await this.notifyVerificationStatus(userId, 'verified', notes);
 
     return (await this.playerProfileRepository.findByUserId(userId))!;
   }
@@ -183,7 +194,59 @@ export class AdminVerificationService {
     });
 
     this.logger.log(`Scout ${userId} ${data.status} by admin ${adminId}`);
+    await this.notifyVerificationStatus(userId, data.status, data.notes);
 
     return (await this.scoutProfileRepository.findByUserId(userId))!;
+  }
+
+  private async notifyVerificationStatus(
+    userId: string,
+    status: 'verified' | 'rejected',
+    reason?: string,
+  ): Promise<void> {
+    const user = await this.userRepository.findByIdWithProfiles(userId);
+    const title =
+      status === 'verified' ? 'Verification approved' : 'Verification rejected';
+    const message =
+      status === 'verified'
+        ? 'Your NxtPro profile has been verified.'
+        : `Your NxtPro verification was rejected.${reason ? ` ${reason}` : ''}`;
+
+    this.eventEmitter.emit('notification.create', {
+      userId,
+      title,
+      message,
+      type: 'verification',
+      referenceId: userId,
+      preference: 'verificationUpdates',
+    });
+
+    if (
+      user?.email &&
+      (await this.notificationPreferencesService.allowsEmailNotification(
+        userId,
+        'verificationUpdates',
+      ))
+    ) {
+      this.sendBestEffortVerificationEmail(user.email, status, reason);
+    }
+  }
+
+  private sendBestEffortVerificationEmail(
+    email: string,
+    status: 'verified' | 'rejected',
+    reason?: string,
+  ): void {
+    void this.mailService
+      .sendVerificationStatusEmail(email, status, reason)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send verification email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

@@ -9,6 +9,8 @@ describe('NotificationsController', () => {
     getUserNotifications: jest.Mock;
     markAllAsRead: jest.Mock;
     markAsRead: jest.Mock;
+    clearAll: jest.Mock;
+    deleteNotification: jest.Mock;
     getPreferences: jest.Mock;
     updatePreferences: jest.Mock;
   };
@@ -18,6 +20,8 @@ describe('NotificationsController', () => {
       getUserNotifications: jest.fn(),
       markAllAsRead: jest.fn(),
       markAsRead: jest.fn(),
+      clearAll: jest.fn(),
+      deleteNotification: jest.fn(),
       getPreferences: jest.fn(),
       updatePreferences: jest.fn(),
     };
@@ -69,6 +73,27 @@ describe('NotificationsController', () => {
     expect(res).toEqual({ affected: 1 });
   });
 
+  it('clearAll calls service', async () => {
+    service.clearAll.mockResolvedValue({ affected: 4 });
+
+    const res = await controller.clearAll('user_1');
+
+    expect(service.clearAll).toHaveBeenCalledWith('user_1');
+    expect(res).toEqual({ affected: 4 });
+  });
+
+  it('deleteNotification calls service', async () => {
+    service.deleteNotification.mockResolvedValue({ affected: 1 });
+
+    const res = await controller.deleteNotification('user_1', 'notif_1');
+
+    expect(service.deleteNotification).toHaveBeenCalledWith(
+      'notif_1',
+      'user_1',
+    );
+    expect(res).toEqual({ affected: 1 });
+  });
+
   it('getPreferences calls service', async () => {
     const preferences = {
       inAppNotifications: true,
@@ -76,6 +101,10 @@ describe('NotificationsController', () => {
       chatRequests: true,
       chatMessages: true,
       chatAccepted: true,
+      connections: true,
+      postEngagement: true,
+      eventUpdates: true,
+      verificationUpdates: true,
     };
     service.getPreferences.mockResolvedValue(preferences);
 
@@ -92,6 +121,10 @@ describe('NotificationsController', () => {
       chatRequests: true,
       chatMessages: true,
       chatAccepted: true,
+      connections: true,
+      postEngagement: true,
+      eventUpdates: true,
+      verificationUpdates: true,
     };
     service.updatePreferences.mockResolvedValue(preferences);
 

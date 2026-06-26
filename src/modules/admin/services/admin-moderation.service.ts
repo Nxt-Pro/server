@@ -4,10 +4,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FindOptionsOrder, FindOptionsWhere } from 'typeorm';
 
 import { ReportSeverity, ReportStatus, ReportType } from '@/common/enums';
-import { Report } from '@/database/entities';
+import { Report, User } from '@/database/entities';
+import { MailService } from '@/integrations/mail/mail.service';
+import { NotificationPreferencesService } from '@/modules/settings';
 import {
   AuditLogRepository,
   ReportRepository,
@@ -27,6 +30,9 @@ export class AdminModerationService {
     reportRepository: ReportRepository,
     userRepository: UserRepository,
     auditLogRepository: AuditLogRepository,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly mailService: MailService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.reportRepository = reportRepository;
     this.userRepository = userRepository;
@@ -152,6 +158,7 @@ export class AdminModerationService {
     });
 
     this.logger.log(`User ${userId} banned by admin ${adminId}`);
+    await this.notifyAccountStatusChanged(user, 'banned', reason);
 
     return { message: `User ${userId} has been banned` };
   }
@@ -187,7 +194,51 @@ export class AdminModerationService {
     });
 
     this.logger.log(`User ${userId} unbanned by admin ${adminId}`);
+    await this.notifyAccountStatusChanged(user, 'active');
 
     return { message: `User ${userId} has been unbanned` };
+  }
+
+  private async notifyAccountStatusChanged(
+    user: User,
+    status: User['status'],
+    reason?: string,
+  ): Promise<void> {
+    this.eventEmitter.emit('notification.create', {
+      userId: user.id,
+      title: 'Account status updated',
+      message: `Your NxtPro account status is now ${status}.${reason ? ` ${reason}` : ''}`,
+      type: 'verification',
+      referenceId: user.id,
+      preference: 'verificationUpdates',
+    });
+
+    if (
+      user.email &&
+      (await this.notificationPreferencesService.allowsEmailNotification(
+        user.id,
+        'verificationUpdates',
+      ))
+    ) {
+      this.sendBestEffortAccountStatusEmail(user.email, status, reason);
+    }
+  }
+
+  private sendBestEffortAccountStatusEmail(
+    email: string,
+    status: string,
+    reason?: string,
+  ): void {
+    void this.mailService
+      .sendAccountStatusEmail(email, status, reason)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send account status email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

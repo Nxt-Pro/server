@@ -272,6 +272,80 @@ export class ChatService {
     });
   };
 
+  rejectChat = async (chatId: string, scoutId: string): Promise<Chat> => {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId },
+      relations: ['participants', 'participants.user', 'scout', 'player'],
+    });
+
+    if (!chat) {
+      throw HttpError.notFound('Chat not found');
+    }
+
+    if (chat.scout?.id !== scoutId) {
+      throw HttpError.forbidden('Only the scout can reject this chat');
+    }
+
+    if (chat.status !== 'pending') {
+      throw HttpError.badRequest('Only pending chat requests can be rejected');
+    }
+
+    chat.status = 'rejected';
+    await this.chatRepository.save(chat);
+
+    await this.participantRepository
+      .createQueryBuilder()
+      .update(ChatParticipant)
+      .set({ status: 'rejected' })
+      .where('chat_id = :chatId', { chatId })
+      .execute();
+
+    const playerId = chat.player?.id;
+    const scoutName = this.getDisplayName(chat.scout);
+    const rejectedChat = await this.chatRepository.findOneOrFail({
+      where: { id: chatId },
+      relations: ['participants', 'participants.user', 'scout', 'player'],
+    });
+
+    this.eventEmitter.emit('chat.rejected', {
+      chatId: chat.id,
+      scoutId,
+      playerId,
+      chat: rejectedChat,
+    });
+
+    if (playerId && playerId !== scoutId) {
+      if (
+        await this.shouldSendChatInAppNotification(
+          playerId,
+          chat.id,
+          'chatRequests',
+        )
+      ) {
+        this.eventEmitter.emit('notification.create', {
+          userId: playerId,
+          title: 'Chat request declined',
+          message: `${scoutName} declined your chat request.`,
+          type: 'message',
+          referenceId: chat.id,
+          preference: 'chatRequests',
+        });
+      }
+
+      if (
+        chat.player?.email &&
+        (await this.notificationPreferencesService.allowsEmailNotification(
+          playerId,
+          'chatRequests',
+        ))
+      ) {
+        this.sendBestEffortChatRejectedEmail(chat.player.email, scoutName);
+      }
+    }
+
+    return rejectedChat;
+  };
+
   getChats = async (userId: string): Promise<Chat[]> => {
     await this.getUserOrThrow(userId);
 
@@ -459,6 +533,21 @@ export class ChatService {
       .catch(error => {
         this.logger.warn(
           `Failed to send chat accepted email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private sendBestEffortChatRejectedEmail(
+    email: string | undefined,
+    scoutName: string,
+  ): void {
+    if (!email) return;
+
+    void this.mailService
+      .sendChatRejectedEmail(email, scoutName)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send chat rejected email: ${this.getErrorMessage(error)}`,
         );
       });
   }

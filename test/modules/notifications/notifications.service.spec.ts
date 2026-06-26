@@ -19,6 +19,7 @@ describe('NotificationsService', () => {
     save: jest.Mock;
     find: jest.Mock;
     update: jest.Mock;
+    delete: jest.Mock;
     count: jest.Mock;
   };
   let userRepo: {
@@ -41,6 +42,7 @@ describe('NotificationsService', () => {
       save: jest.fn(),
       find: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
       count: jest.fn(),
     };
 
@@ -195,6 +197,21 @@ describe('NotificationsService', () => {
     expect(updateArg.readAt).toBeInstanceOf(Date);
   });
 
+  it('deleteNotification deletes that notification for that user', async () => {
+    notificationRepo.delete.mockResolvedValue({ affected: 1 });
+
+    await expect(
+      service.deleteNotification('notif_1', 'user_1'),
+    ).resolves.toEqual({
+      affected: 1,
+    });
+
+    expect(notificationRepo.delete).toHaveBeenCalledWith({
+      id: 'notif_1',
+      user: { id: 'user_1' },
+    });
+  });
+
   it('markAllAsRead only updates unread notifications (IsNull)', async () => {
     notificationRepo.update.mockResolvedValue({ affected: 3 });
 
@@ -213,6 +230,18 @@ describe('NotificationsService', () => {
     expect(whereArg.readAt.type).toBe('isNull');
 
     expect(updateArg.readAt).toBeInstanceOf(Date);
+  });
+
+  it('clearAll deletes all notifications for the user', async () => {
+    notificationRepo.delete.mockResolvedValue({ affected: 5 });
+
+    await expect(service.clearAll('user_1')).resolves.toEqual({
+      affected: 5,
+    });
+
+    expect(notificationRepo.delete).toHaveBeenCalledWith({
+      user: { id: 'user_1' },
+    });
   });
 
   it('getUnreadCount counts unread notifications for a user', async () => {

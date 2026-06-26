@@ -147,4 +147,131 @@ Open NxtPro to continue the conversation.`;
 
     await this.sendMail({ to: email, subject, text });
   }
+
+  async sendChatRejectedEmail(email: string, scoutName: string): Promise<void> {
+    const subject = 'Your NxtPro chat request was declined';
+    const text = `${scoutName} declined your chat request on NxtPro.
+
+You can continue discovering other scouts and opportunities in NxtPro.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendConnectionRequestEmail(
+    email: string,
+    requesterName: string,
+  ): Promise<void> {
+    const subject = 'New connection request on NxtPro';
+    const text = `${requesterName} sent you a connection request on NxtPro.
+
+Open NxtPro to review and respond.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendConnectionAcceptedEmail(
+    email: string,
+    accepterName: string,
+  ): Promise<void> {
+    const subject = 'Your NxtPro connection request was accepted';
+    const text = `${accepterName} accepted your connection request on NxtPro.
+
+Open NxtPro to view their profile.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendEventRegistrationSubmittedEmail(
+    email: string,
+    eventTitle: string,
+  ): Promise<void> {
+    const subject = 'Your NxtPro event registration was submitted';
+    const text = `Your registration for "${eventTitle}" was submitted.
+
+Open NxtPro to follow its status.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendEventRegistrationStatusEmail(
+    email: string,
+    eventTitle: string,
+    status: 'approved' | 'rejected',
+  ): Promise<void> {
+    const subject =
+      status === 'approved'
+        ? 'Your NxtPro event registration was accepted'
+        : 'Your NxtPro event registration was rejected';
+    const text = `Your registration for "${eventTitle}" was ${status}.
+
+Open NxtPro to view the event details.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendEventCancelledEmail(
+    email: string,
+    eventTitle: string,
+  ): Promise<void> {
+    const subject = 'A NxtPro event was cancelled';
+    const text = `"${eventTitle}" was cancelled.
+
+Open NxtPro to find other events.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendEventStatusEmail(
+    email: string,
+    eventTitle: string,
+    status: 'approved' | 'rejected',
+    reason?: string,
+  ): Promise<void> {
+    const subject =
+      status === 'approved'
+        ? 'Your NxtPro event was approved'
+        : 'Your NxtPro event was rejected';
+    const reasonText = reason ? `\n\nReason:\n${reason}` : '';
+    const text = `"${eventTitle}" was ${status}.${reasonText}
+
+Open NxtPro to review the event.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendVerificationStatusEmail(
+    email: string,
+    status: 'verified' | 'rejected',
+    reason?: string,
+  ): Promise<void> {
+    const subject =
+      status === 'verified'
+        ? 'Your NxtPro profile was verified'
+        : 'Your NxtPro verification was rejected';
+    const reasonText = reason ? `\n\nReason:\n${reason}` : '';
+    const text =
+      status === 'verified'
+        ? `Your NxtPro profile verification was approved.
+
+Open NxtPro to view your verified profile.`
+        : `Your NxtPro verification was rejected.${reasonText}
+
+Open NxtPro to review your profile.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
+
+  async sendAccountStatusEmail(
+    email: string,
+    status: string,
+    reason?: string,
+  ): Promise<void> {
+    const subject = 'Your NxtPro account status changed';
+    const reasonText = reason ? `\n\nReason:\n${reason}` : '';
+    const text = `Your NxtPro account status is now "${status}".${reasonText}
+
+Contact support if you believe this was a mistake.`;
+
+    await this.sendMail({ to: email, subject, text });
+  }
 }

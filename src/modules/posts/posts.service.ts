@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type {
@@ -80,6 +81,7 @@ export class PostsService {
     @InjectRepository(Mute)
     muteRepository: Repository<Mute>,
     private readonly mediaUrlService: MediaUrlService,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     this.postRepository = postRepository;
     this.attachmentRepository = attachmentRepository;
@@ -578,7 +580,7 @@ export class PostsService {
   }
 
   async likePost(postId: string, userId: string): Promise<LikeResponseDto> {
-    await this.ensurePostExists(postId);
+    const existingPost = await this.ensurePostExists(postId);
     const existing = await this.likeRepository.findOne({
       where: { postId, userId },
     });
@@ -591,6 +593,7 @@ export class PostsService {
     );
     await this.postRepository.increment({ id: postId }, 'likesCount', 1);
     const post = await this.postRepository.findOne({ where: { id: postId } });
+    await this.notifyPostLiked(existingPost, userId);
     return { liked: true, likesCount: post?.likesCount ?? 0 };
   }
 
@@ -632,7 +635,7 @@ export class PostsService {
     userId: string,
     dto: CreateCommentDto,
   ): Promise<CommentResponseDto> {
-    await this.ensurePostVisible(postId, userId);
+    const post = await this.ensurePostVisible(postId, userId);
     const comment = this.commentRepository.create({
       postId,
       userId,
@@ -641,6 +644,7 @@ export class PostsService {
     });
     await this.commentRepository.save(comment);
     await this.postRepository.increment({ id: postId }, 'commentsCount', 1);
+    await this.notifyPostCommented(post, userId, dto.content);
     return this.toCommentResponse(comment);
   }
 
@@ -1195,5 +1199,61 @@ export class PostsService {
       createdAt: comment.createdAt.toISOString(),
       updatedAt: comment.updatedAt.toISOString(),
     };
+  }
+
+  private async notifyPostLiked(post: Post, actorId: string): Promise<void> {
+    if (post.userId === actorId) {
+      return;
+    }
+
+    const actor = await this.findUserWithProfiles(actorId);
+    this.eventEmitter.emit('notification.create', {
+      userId: post.userId,
+      title: 'New like',
+      message: `${this.getDisplayName(actor)} liked your post.`,
+      type: 'like',
+      referenceId: post.id,
+      preference: 'postEngagement',
+    });
+  }
+
+  private async notifyPostCommented(
+    post: Post,
+    actorId: string,
+    content: string,
+  ): Promise<void> {
+    if (post.userId === actorId) {
+      return;
+    }
+
+    const actor = await this.findUserWithProfiles(actorId);
+    const preview = content.trim().slice(0, 120);
+    this.eventEmitter.emit('notification.create', {
+      userId: post.userId,
+      title: 'New comment',
+      message: preview
+        ? `${this.getDisplayName(actor)} commented: ${preview}`
+        : `${this.getDisplayName(actor)} commented on your post.`,
+      type: 'comment',
+      referenceId: post.id,
+      preference: 'postEngagement',
+    });
+  }
+
+  private findUserWithProfiles(userId: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['playerProfile', 'scoutProfile'],
+    });
+  }
+
+  private getDisplayName(user?: User | null): string {
+    return (
+      user?.playerProfile?.fullName ??
+      user?.scoutProfile?.fullName ??
+      user?.username ??
+      user?.email ??
+      'Someone'
+    );
   }
 }

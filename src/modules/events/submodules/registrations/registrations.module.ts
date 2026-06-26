@@ -8,9 +8,13 @@ import {
   PlayerProfile,
   User,
 } from '@/database/entities';
+import { MailModule } from '@/integrations/mail/mail.module';
+import { SettingsModule } from '@/modules/settings';
 
 @Module({
   imports: [
+    MailModule,
+    SettingsModule,
     TypeOrmModule.forFeature([Event, EventRegistration, PlayerProfile, User]),
   ],
   controllers: [RegistrationsController],

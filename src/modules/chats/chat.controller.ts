@@ -36,6 +36,14 @@ export class ChatController {
     return this.chatService.acceptChat(chatId, userId);
   }
 
+  @Patch(':id/reject')
+  async rejectChat(
+    @CurrentUser('sub') userId: string,
+    @Param('id') chatId: string,
+  ) {
+    return this.chatService.rejectChat(chatId, userId);
+  }
+
   @Get()
   async getChats(@CurrentUser('sub') userId: string) {
     return this.chatService.getChats(userId);

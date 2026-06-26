@@ -23,4 +23,16 @@ export class UserNotificationPreference extends BaseEntity {
 
   @Column({ type: 'boolean', default: true, name: 'chat_accepted' })
   chatAccepted: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  connections: boolean;
+
+  @Column({ type: 'boolean', default: true, name: 'post_engagement' })
+  postEngagement: boolean;
+
+  @Column({ type: 'boolean', default: true, name: 'event_updates' })
+  eventUpdates: boolean;
+
+  @Column({ type: 'boolean', default: true, name: 'verification_updates' })
+  verificationUpdates: boolean;
 }

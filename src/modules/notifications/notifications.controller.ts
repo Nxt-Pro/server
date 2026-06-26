@@ -88,6 +88,12 @@ export class NotificationsController {
     return this.notificationsService.markAllAsRead(userId);
   }
 
+  @Delete()
+  async clearAll(@CurrentUser('sub') userId: string) {
+    if (!userId) throw HttpError.unauthorized();
+    return this.notificationsService.clearAll(userId);
+  }
+
   @Patch(':id/read')
   async markAsRead(
     @CurrentUser('sub') userId: string,
@@ -95,5 +101,14 @@ export class NotificationsController {
   ) {
     if (!userId) throw HttpError.unauthorized();
     return this.notificationsService.markAsRead(id, userId);
+  }
+
+  @Delete(':id')
+  async deleteNotification(
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+  ) {
+    if (!userId) throw HttpError.unauthorized();
+    return this.notificationsService.deleteNotification(id, userId);
   }
 }

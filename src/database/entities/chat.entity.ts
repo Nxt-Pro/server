@@ -34,10 +34,10 @@ export class Chat extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: ['pending', 'active', 'archived', 'blocked'],
+    enum: ['pending', 'active', 'archived', 'blocked', 'rejected'],
     default: 'pending',
   })
-  status: 'pending' | 'active' | 'archived' | 'blocked';
+  status: 'pending' | 'active' | 'archived' | 'blocked' | 'rejected';
 
   @Column({ type: 'int', default: 0, name: 'unread_count' })
   unreadCount: number;

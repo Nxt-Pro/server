@@ -49,6 +49,13 @@ interface ChatAcceptedPayload {
   playerId?: string;
 }
 
+interface ChatRejectedPayload {
+  chatId: string;
+  scoutId?: string;
+  playerId?: string;
+  chat?: unknown;
+}
+
 interface ChatRequestedPayload {
   chatId: string;
   scoutId: string;
@@ -251,6 +258,20 @@ export class ChatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   };
 
+  private emitChatRejected = (payload: ChatRejectedPayload) => {
+    const { chatId, playerId, scoutId, chat } = payload;
+    const rooms = [playerId, scoutId]
+      .filter((userId): userId is string => Boolean(userId))
+      .map(userId => this.userRoom(userId));
+
+    if (rooms.length === 0) {
+      return;
+    }
+
+    this.server.to(rooms).emit('chat.rejected', { chatId });
+    this.server.to(rooms).emit('chat:updated', { chatId, chat });
+  };
+
   private emitChatRequested = (payload: ChatRequestedPayload) => {
     const { chatId, scoutId, playerId, chat } = payload;
     this.server.to(this.userRoom(scoutId)).emit('chat.requested', {
@@ -281,6 +302,11 @@ export class ChatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @OnEvent('chat.accepted')
   onChatAccepted(payload: ChatAcceptedPayload) {
     this.emitChatAccepted(payload);
+  }
+
+  @OnEvent('chat.rejected')
+  onChatRejected(payload: ChatRejectedPayload) {
+    this.emitChatRejected(payload);
   }
 
   @OnEvent('chat.requested')

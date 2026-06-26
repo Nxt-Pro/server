@@ -20,4 +20,20 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   chatAccepted?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  connections?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  postEngagement?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  eventUpdates?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  verificationUpdates?: boolean;
 }

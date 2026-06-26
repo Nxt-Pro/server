@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UpdateRegistrationDto } from '../../dtos';
@@ -8,10 +9,14 @@ import {
   PlayerProfile,
   User,
 } from '@/database/entities';
+import { MailService } from '@/integrations/mail/mail.service';
+import { NotificationPreferencesService } from '@/modules/settings';
 import { HttpError } from '@/common/utils';
 
 @Injectable()
 export class RegistrationsService {
+  private readonly logger = new Logger(RegistrationsService.name);
+
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
@@ -21,6 +26,9 @@ export class RegistrationsService {
     private readonly playerProfileRepository: Repository<PlayerProfile>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly mailService: MailService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
 
   private getUserOrThrow = async (userId?: string) => {
@@ -57,60 +65,74 @@ export class RegistrationsService {
       throw HttpError.notFound('Player profile not found');
     }
 
-    return this.registrationRepository.manager.transaction(async manager => {
-      const event = await manager.findOne(Event, {
-        where: { id: eventId },
-        lock: { mode: 'pessimistic_write' },
-      });
+    const playerUser = await this.getUserOrThrow(playerId);
 
-      if (!event) {
-        throw HttpError.notFound('Event not found');
-      }
+    const result = await this.registrationRepository.manager.transaction(
+      async manager => {
+        const event = await manager.findOne(Event, {
+          where: { id: eventId },
+          relations: ['organizer'],
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (event.status !== 'approved') {
-        throw HttpError.badRequest('Event is not approved');
-      }
+        if (!event) {
+          throw HttpError.notFound('Event not found');
+        }
 
-      if (
-        event.maxParticipants > 0 &&
-        event.participantCount >= event.maxParticipants
-      ) {
-        throw HttpError.badRequest('Event is full');
-      }
+        if (event.status !== 'approved') {
+          throw HttpError.badRequest('Event is not approved');
+        }
 
-      if (
-        event.registrationDeadline &&
-        new Date() > new Date(event.registrationDeadline)
-      ) {
-        throw HttpError.badRequest('Registration deadline has passed');
-      }
+        if (
+          event.maxParticipants > 0 &&
+          event.participantCount >= event.maxParticipants
+        ) {
+          throw HttpError.badRequest('Event is full');
+        }
 
-      const existing = await manager
-        .createQueryBuilder(EventRegistration, 'registration')
-        .setLock('pessimistic_read')
-        .where('registration.event_id = :eventId', { eventId })
-        .andWhere('registration.player_id = :playerId', { playerId })
-        .andWhere('registration.cancelled = false')
-        .getOne();
+        if (
+          event.registrationDeadline &&
+          new Date() > new Date(event.registrationDeadline)
+        ) {
+          throw HttpError.badRequest('Registration deadline has passed');
+        }
 
-      if (existing) {
-        throw HttpError.conflict('Already registered for this event');
-      }
+        const existing = await manager
+          .createQueryBuilder(EventRegistration, 'registration')
+          .setLock('pessimistic_read')
+          .where('registration.event_id = :eventId', { eventId })
+          .andWhere('registration.player_id = :playerId', { playerId })
+          .andWhere('registration.cancelled = false')
+          .getOne();
 
-      const registration = manager.create(EventRegistration, {
-        event: { id: eventId } as Event,
-        player: { userId: playerId } as PlayerProfile,
-        status: 'pending',
-        registeredAt: new Date(),
-      });
+        if (existing) {
+          throw HttpError.conflict('Already registered for this event');
+        }
 
-      const saved = await manager.save(registration);
+        const registration = manager.create(EventRegistration, {
+          event: { id: eventId } as Event,
+          player: { userId: playerId } as PlayerProfile,
+          status: 'pending',
+          registeredAt: new Date(),
+        });
 
-      event.participantCount = (event.participantCount ?? 0) + 1;
-      await manager.save(event);
+        const saved = await manager.save(registration);
 
-      return saved;
-    });
+        event.participantCount = (event.participantCount ?? 0) + 1;
+        await manager.save(event);
+
+        return { registration: saved, event };
+      },
+    );
+
+    await this.notifyRegistrationSubmitted(result.event, playerUser);
+
+    return (
+      (await this.registrationRepository.findOne({
+        where: { id: result.registration.id },
+        relations: ['event', 'player', 'player.user'],
+      })) ?? result.registration
+    );
   };
 
   getEventRegistrations = async (
@@ -132,15 +154,22 @@ export class RegistrationsService {
 
     const registration = await this.registrationRepository.findOne({
       where: { id: registrationId },
-      relations: ['event', 'player'],
+      relations: ['event', 'player', 'player.user'],
     });
 
     if (!registration) {
       throw HttpError.notFound('Registration not found');
     }
 
+    const previousStatus = registration.status;
     Object.assign(registration, dto);
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    if (dto.status && dto.status !== previousStatus) {
+      await this.notifyRegistrationStatusChanged(saved, dto.status);
+    }
+
+    return saved;
   };
 
   cancelRegistration = async (
@@ -149,35 +178,171 @@ export class RegistrationsService {
   ): Promise<EventRegistration> => {
     const user = await this.getUserOrThrow(userId);
 
-    return this.registrationRepository.manager.transaction(async manager => {
-      const registration = await manager.findOne(EventRegistration, {
-        where: { id: registrationId },
-        relations: ['event', 'player', 'player.user'],
-        lock: { mode: 'pessimistic_write' },
-      });
+    const result = await this.registrationRepository.manager.transaction(
+      async manager => {
+        const registration = await manager.findOne(EventRegistration, {
+          where: { id: registrationId },
+          relations: ['event', 'event.organizer', 'player', 'player.user'],
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!registration) {
-        throw HttpError.notFound('Registration not found');
-      }
+        if (!registration) {
+          throw HttpError.notFound('Registration not found');
+        }
 
-      if (registration.player.user.id !== user.id) {
-        throw HttpError.forbidden('Not authorized to cancel this registration');
-      }
+        if (registration.player.user.id !== user.id) {
+          throw HttpError.forbidden(
+            'Not authorized to cancel this registration',
+          );
+        }
 
-      if (registration.cancelled) {
-        return registration;
-      }
+        if (registration.cancelled) {
+          return { registration, cancelledNow: false };
+        }
 
-      registration.cancelled = true;
-      await manager.save(registration);
+        registration.cancelled = true;
+        await manager.save(registration);
 
-      const event = registration.event;
-      if (event.participantCount > 0) {
-        event.participantCount -= 1;
-        await manager.save(event);
-      }
+        const event = registration.event;
+        if (event.participantCount > 0) {
+          event.participantCount -= 1;
+          await manager.save(event);
+        }
 
-      return registration;
-    });
+        return { registration, cancelledNow: true };
+      },
+    );
+
+    if (result.cancelledNow) {
+      this.notifyRegistrationCancelled(result.registration, user.id);
+    }
+
+    return result.registration;
   };
+
+  private async notifyRegistrationSubmitted(
+    event: Event,
+    player: User,
+  ): Promise<void> {
+    const organizerId = event.organizer?.id;
+
+    if (organizerId && organizerId !== player.id) {
+      this.eventEmitter.emit('notification.create', {
+        userId: organizerId,
+        title: 'New event registration',
+        message: `${this.getDisplayName(player)} registered for "${event.title}".`,
+        type: 'new_event',
+        referenceId: event.id,
+        preference: 'eventUpdates',
+      });
+    }
+
+    if (
+      player.email &&
+      (await this.notificationPreferencesService.allowsEmailNotification(
+        player.id,
+        'eventUpdates',
+      ))
+    ) {
+      this.sendBestEffortRegistrationSubmittedEmail(player.email, event.title);
+    }
+  }
+
+  private async notifyRegistrationStatusChanged(
+    registration: EventRegistration,
+    status: 'pending' | 'approved' | 'rejected',
+  ): Promise<void> {
+    const player = registration.player?.user;
+    const event = registration.event;
+
+    if (!player?.id || !event?.id) {
+      return;
+    }
+
+    this.eventEmitter.emit('notification.create', {
+      userId: player.id,
+      title: 'Registration status updated',
+      message: `Your registration for "${event.title}" is now ${status}.`,
+      type: 'new_event',
+      referenceId: event.id,
+      preference: 'eventUpdates',
+    });
+
+    if (
+      (status === 'approved' || status === 'rejected') &&
+      player.email &&
+      (await this.notificationPreferencesService.allowsEmailNotification(
+        player.id,
+        'eventUpdates',
+      ))
+    ) {
+      this.sendBestEffortRegistrationStatusEmail(
+        player.email,
+        event.title,
+        status,
+      );
+    }
+  }
+
+  private notifyRegistrationCancelled(
+    registration: EventRegistration,
+    actorId: string,
+  ): void {
+    const event = registration.event;
+    const organizerId = event?.organizer?.id;
+
+    if (!event?.id || !organizerId || organizerId === actorId) {
+      return;
+    }
+
+    this.eventEmitter.emit('notification.create', {
+      userId: organizerId,
+      title: 'Registration cancelled',
+      message: `${this.getDisplayName(registration.player?.user)} cancelled their registration for "${event.title}".`,
+      type: 'new_event',
+      referenceId: event.id,
+      preference: 'eventUpdates',
+    });
+  }
+
+  private sendBestEffortRegistrationSubmittedEmail(
+    email: string,
+    eventTitle: string,
+  ): void {
+    void this.mailService
+      .sendEventRegistrationSubmittedEmail(email, eventTitle)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send registration submitted email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private sendBestEffortRegistrationStatusEmail(
+    email: string,
+    eventTitle: string,
+    status: 'approved' | 'rejected',
+  ): void {
+    void this.mailService
+      .sendEventRegistrationStatusEmail(email, eventTitle, status)
+      .catch(error => {
+        this.logger.warn(
+          `Failed to send registration status email: ${this.getErrorMessage(error)}`,
+        );
+      });
+  }
+
+  private getDisplayName(user?: User | null): string {
+    return (
+      user?.playerProfile?.fullName ??
+      user?.scoutProfile?.fullName ??
+      user?.username ??
+      user?.email ??
+      'Someone'
+    );
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown error';
+  }
 }

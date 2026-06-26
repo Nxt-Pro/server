@@ -7,7 +7,11 @@ import { User, UserNotificationPreference } from '@/database/entities';
 export type NotificationPreferenceKey =
   | 'chatRequests'
   | 'chatMessages'
-  | 'chatAccepted';
+  | 'chatAccepted'
+  | 'connections'
+  | 'postEngagement'
+  | 'eventUpdates'
+  | 'verificationUpdates';
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   inAppNotifications: true,
@@ -15,6 +19,10 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = {
   chatRequests: true,
   chatMessages: true,
   chatAccepted: true,
+  connections: true,
+  postEngagement: true,
+  eventUpdates: true,
+  verificationUpdates: true,
 };
 
 export interface NotificationPreferencesResponse {
@@ -23,6 +31,10 @@ export interface NotificationPreferencesResponse {
   chatRequests: boolean;
   chatMessages: boolean;
   chatAccepted: boolean;
+  connections: boolean;
+  postEngagement: boolean;
+  eventUpdates: boolean;
+  verificationUpdates: boolean;
 }
 
 @Injectable()
@@ -116,6 +128,17 @@ export class NotificationPreferencesService {
       chatAccepted:
         preferences.chatAccepted ??
         DEFAULT_NOTIFICATION_PREFERENCES.chatAccepted,
+      connections:
+        preferences.connections ?? DEFAULT_NOTIFICATION_PREFERENCES.connections,
+      postEngagement:
+        preferences.postEngagement ??
+        DEFAULT_NOTIFICATION_PREFERENCES.postEngagement,
+      eventUpdates:
+        preferences.eventUpdates ??
+        DEFAULT_NOTIFICATION_PREFERENCES.eventUpdates,
+      verificationUpdates:
+        preferences.verificationUpdates ??
+        DEFAULT_NOTIFICATION_PREFERENCES.verificationUpdates,
     };
   }
 

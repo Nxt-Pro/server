@@ -42,6 +42,9 @@ describe('EventsService', () => {
     remove: jest.Mock;
   };
   let userRepoMock: { findOne: jest.Mock };
+  let eventEmitter: { emit: jest.Mock };
+  let mailService: { sendEventStatusEmail: jest.Mock };
+  let notificationPreferencesService: { allowsEmailNotification: jest.Mock };
 
   beforeEach(() => {
     eventRepoMock = {
@@ -55,10 +58,20 @@ describe('EventsService', () => {
     userRepoMock = {
       findOne: jest.fn(),
     };
+    eventEmitter = { emit: jest.fn() };
+    mailService = {
+      sendEventStatusEmail: jest.fn().mockResolvedValue(undefined),
+    };
+    notificationPreferencesService = {
+      allowsEmailNotification: jest.fn().mockResolvedValue(true),
+    };
 
     service = new EventsService(
       eventRepoMock as unknown as Repository<Event>,
       userRepoMock as unknown as Repository<User>,
+      eventEmitter as never,
+      mailService as never,
+      notificationPreferencesService as never,
     );
   });
 
@@ -150,6 +163,47 @@ describe('EventsService', () => {
     await expect(
       service.approveEvent('event-1', 'user-1', true),
     ).rejects.toBeInstanceOf(HttpError);
+  });
+
+  it('notifies and emails the organizer when an event is approved', async () => {
+    const event = {
+      id: 'event-1',
+      title: 'Trial Day',
+      status: 'pending_approval',
+      organizer: { id: 'scout-1', email: 'scout@nxtpro.dev' } as User,
+    } as Event;
+    const savedEvent = {
+      ...event,
+      status: 'approved',
+      approvedBy: { id: 'admin-1' } as User,
+    } as Event;
+
+    userRepoMock.findOne.mockResolvedValue({
+      id: 'admin-1',
+      role: 'admin',
+    });
+    eventRepoMock.findOne.mockResolvedValue(event);
+    eventRepoMock.save.mockResolvedValue(savedEvent);
+
+    await service.approveEvent(event.id, 'admin-1', true);
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
+      userId: 'scout-1',
+      title: 'Event approved',
+      message: '"Trial Day" was approved.',
+      type: 'new_event',
+      referenceId: event.id,
+      preference: 'eventUpdates',
+    });
+    expect(
+      notificationPreferencesService.allowsEmailNotification,
+    ).toHaveBeenCalledWith('scout-1', 'eventUpdates');
+    expect(mailService.sendEventStatusEmail).toHaveBeenCalledWith(
+      'scout@nxtpro.dev',
+      'Trial Day',
+      'approved',
+      undefined,
+    );
   });
 
   it('prevents non-owners and non-admins from updating events', async () => {

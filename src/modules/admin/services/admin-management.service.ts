@@ -1,15 +1,19 @@
 import {
   BadRequestException,
   ConflictException,
+  Logger,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 
 import { UserRole, UserStatus } from '@/common/enums';
 import { User } from '@/database/entities';
 import { AuditLogRepository, UserRepository } from '@/database/repositories';
+import { MailService } from '@/integrations/mail/mail.service';
+import { NotificationPreferencesService } from '@/modules/settings';
 
 const SALT_ROUNDS = 10;
 
@@ -26,12 +30,16 @@ export interface AdminAccountResponse {
 
 @Injectable()
 export class AdminManagementService {
+  private readonly logger = new Logger(AdminManagementService.name);
   private readonly userRepository: UserRepository;
   private readonly auditLogRepository: AuditLogRepository;
 
   constructor(
     userRepository: UserRepository,
     auditLogRepository: AuditLogRepository,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly mailService: MailService,
+    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.userRepository = userRepository;
     this.auditLogRepository = auditLogRepository;
@@ -205,6 +213,10 @@ export class AdminManagementService {
     });
 
     const updated = await this.userRepository.findById(admin.id);
+    if (updates.status !== undefined && updated) {
+      await this.notifyAdminStatusChanged(updated, updated.status);
+    }
+
     return this.toResponse(updated!);
   }
 
@@ -224,5 +236,44 @@ export class AdminManagementService {
   private normalizeUsername(username?: string): string | undefined {
     const normalized = username?.trim().toLowerCase();
     return normalized || undefined;
+  }
+
+  private async notifyAdminStatusChanged(
+    admin: User,
+    status: User['status'],
+  ): Promise<void> {
+    this.eventEmitter.emit('notification.create', {
+      userId: admin.id,
+      title: 'Account status updated',
+      message: `Your NxtPro admin account status is now ${status}.`,
+      type: 'verification',
+      referenceId: admin.id,
+      preference: 'verificationUpdates',
+    });
+
+    if (
+      admin.email &&
+      (await this.notificationPreferencesService.allowsEmailNotification(
+        admin.id,
+        'verificationUpdates',
+      ))
+    ) {
+      this.sendBestEffortAccountStatusEmail(admin.email, status);
+    }
+  }
+
+  private sendBestEffortAccountStatusEmail(
+    email: string,
+    status: string,
+  ): void {
+    void this.mailService.sendAccountStatusEmail(email, status).catch(error => {
+      this.logger.warn(
+        `Failed to send admin status email: ${this.getErrorMessage(error)}`,
+      );
+    });
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import 'reflect-metadata';
 
+import { UserStatus } from '@/common/enums';
 import { AdminManagementService } from '@/modules/admin/services/admin-management.service';
 
 describe('AdminManagementService', () => {
@@ -17,6 +18,9 @@ describe('AdminManagementService', () => {
     updateOne: jest.Mock;
   };
   let auditLogRepository: { log: jest.Mock };
+  let eventEmitter: { emit: jest.Mock };
+  let mailService: { sendAccountStatusEmail: jest.Mock };
+  let notificationPreferencesService: { allowsEmailNotification: jest.Mock };
 
   const admin = {
     id: 'admin_1',
@@ -36,10 +40,20 @@ describe('AdminManagementService', () => {
       updateOne: jest.fn(),
     };
     auditLogRepository = { log: jest.fn() };
+    eventEmitter = { emit: jest.fn() };
+    mailService = {
+      sendAccountStatusEmail: jest.fn().mockResolvedValue(undefined),
+    };
+    notificationPreferencesService = {
+      allowsEmailNotification: jest.fn().mockResolvedValue(true),
+    };
 
     service = new AdminManagementService(
       userRepository as never,
       auditLogRepository as never,
+      eventEmitter as never,
+      mailService as never,
+      notificationPreferencesService as never,
     );
   });
 
@@ -158,15 +172,50 @@ describe('AdminManagementService', () => {
     userRepository.findById.mockResolvedValue(admin);
 
     await expect(
-      service.updateAdmin(admin.id, admin.id, { status: 'suspended' }),
+      service.updateAdmin(admin.id, admin.id, {
+        status: UserStatus.SUSPENDED,
+      }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('notifies an admin when their account status changes', async () => {
+    const updated = {
+      ...admin,
+      status: 'suspended' as const,
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    };
+
+    userRepository.findById
+      .mockResolvedValueOnce(admin)
+      .mockResolvedValueOnce(updated);
+    userRepository.updateOne.mockResolvedValue({ affected: 1 });
+    auditLogRepository.log.mockResolvedValue({});
+
+    await service.updateAdmin('actor_1', admin.id, {
+      status: UserStatus.SUSPENDED,
+    });
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
+      userId: admin.id,
+      title: 'Account status updated',
+      message: 'Your NxtPro admin account status is now suspended.',
+      type: 'verification',
+      referenceId: admin.id,
+      preference: 'verificationUpdates',
+    });
+    expect(mailService.sendAccountStatusEmail).toHaveBeenCalledWith(
+      admin.email,
+      'suspended',
+    );
   });
 
   it('rejects non-admin targets', async () => {
     userRepository.findById.mockResolvedValue({ ...admin, role: 'player' });
 
     await expect(
-      service.updateAdmin('actor_1', admin.id, { status: 'suspended' }),
+      service.updateAdmin('actor_1', admin.id, {
+        status: UserStatus.SUSPENDED,
+      }),
     ).rejects.toThrow(NotFoundException);
   });
 });
