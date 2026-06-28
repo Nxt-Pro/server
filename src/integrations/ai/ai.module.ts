@@ -1,23 +1,34 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AiController } from './ai.controller';
+import { AiRecommendationService } from './ai-recommendation.service';
 import {
   AI_MODEL_SERVICE,
   MockAiModelService,
   RealAiModelService,
 } from './services';
+import { SkillScoringService } from './skill-scoring.service';
 import { VideoAnalysisService } from './video-analysis.service';
 
 import { AiConfig } from '@/config';
+import { Block, Mute, PlayerProfile } from '@/database/entities';
 import { RepositoriesModule } from '@/database/repositories.module';
 import { QueuesModule } from '@/queues/queues.module';
 
 @Module({
-  imports: [RepositoriesModule, forwardRef(() => QueuesModule), ConfigModule],
+  imports: [
+    RepositoriesModule,
+    TypeOrmModule.forFeature([Block, Mute, PlayerProfile]),
+    forwardRef(() => QueuesModule),
+    ConfigModule,
+  ],
   controllers: [AiController],
   providers: [
     VideoAnalysisService,
+    SkillScoringService,
+    AiRecommendationService,
     MockAiModelService,
     RealAiModelService,
     {
@@ -33,6 +44,6 @@ import { QueuesModule } from '@/queues/queues.module';
       inject: [ConfigService, MockAiModelService, RealAiModelService],
     },
   ],
-  exports: [VideoAnalysisService, AI_MODEL_SERVICE],
+  exports: [VideoAnalysisService, SkillScoringService, AI_MODEL_SERVICE],
 })
 export class AiModule {}

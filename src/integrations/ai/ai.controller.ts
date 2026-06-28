@@ -6,15 +6,25 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Request,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
-import { AnalyzeVideoDto, RecalculatePlayerDto, VideoUploadDto } from './dto';
+import {
+  AnalyzeVideoDto,
+  RecalculatePlayerDto,
+  SubmitSkillScoringDto,
+  VideoUploadDto,
+} from './dto';
+import { AiRecommendationService } from './ai-recommendation.service';
+import { SkillScoringService } from './skill-scoring.service';
 import { VideoAnalysisService } from './video-analysis.service';
 
+import { CurrentUser } from '@/common/decorators';
 import { JwtAuthGuard } from '@/common/guards';
+import type { JwtPayload } from '@/common/interfaces/jwt-payload.interface';
 import { JobProgress } from '@/common/types';
 import { VideoSkillAnalysis } from '@/database/entities';
 
@@ -27,9 +37,62 @@ interface RequestWithUser extends ExpressRequest {
 @UseGuards(JwtAuthGuard)
 export class AiController {
   private readonly videoAnalysisService: VideoAnalysisService;
+  private readonly skillScoringService: SkillScoringService;
+  private readonly recommendationService: AiRecommendationService;
 
-  constructor(videoAnalysisService: VideoAnalysisService) {
+  constructor(
+    videoAnalysisService: VideoAnalysisService,
+    skillScoringService: SkillScoringService,
+    recommendationService: AiRecommendationService,
+  ) {
     this.videoAnalysisService = videoAnalysisService;
+    this.skillScoringService = skillScoringService;
+    this.recommendationService = recommendationService;
+  }
+
+  @Get('skills/support')
+  getSupportedSkills() {
+    return {
+      supportedSkills: this.skillScoringService.getSupportedSkills(),
+    };
+  }
+
+  @Post('skills/score')
+  submitSkillScoring(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SubmitSkillScoringDto,
+  ) {
+    return this.skillScoringService.submitSkillScoring(user.sub, dto);
+  }
+
+  @Get('skills/jobs')
+  listSkillScoringJobs(
+    @CurrentUser() user: JwtPayload,
+    @Query('limit') limit?: string,
+  ) {
+    return this.skillScoringService.listJobsForUser(
+      user.sub,
+      limit == null ? undefined : Number(limit),
+    );
+  }
+
+  @Get('skills/jobs/:jobId')
+  getSkillScoringJob(
+    @CurrentUser() user: JwtPayload,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.skillScoringService.getJobForUser(jobId, user.sub);
+  }
+
+  @Get('recommendations')
+  getRecommendations(@CurrentUser() user: JwtPayload, @Query('k') k?: string) {
+    if (user.role !== 'scout') {
+      throw new UnauthorizedException('Only scouts can fetch recommendations');
+    }
+    return this.recommendationService.getScoutRecommendations(
+      user.sub,
+      k == null ? 10 : Number(k),
+    );
   }
 
   /**

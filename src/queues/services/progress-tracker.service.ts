@@ -14,7 +14,7 @@ import { JobProgress } from '@/common/types';
 @Injectable()
 export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProgressTrackerService.name);
-  private redis!: Redis;
+  private redis?: Redis;
   private readonly TTL = 3600; // 1 hour TTL for progress data
 
   private readonly queueConfigService: QueueConfigService;
@@ -140,7 +140,7 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
     jobId: string,
     userId: string,
   ): Promise<JobProgress | null> {
-    const data = await this.redis.get(this.getProgressKey(jobId, userId));
+    const data = await this.getRedis().get(this.getProgressKey(jobId, userId));
     return data ? (JSON.parse(data) as JobProgress) : null;
   }
 
@@ -154,7 +154,7 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
     if (jobIds.length === 0) return [];
 
     const keys = jobIds.map(id => this.getProgressKey(id, userId));
-    const results = await this.redis.mget(...keys);
+    const results = await this.getRedis().mget(...keys);
 
     return results
       .filter((data): data is string => data !== null)
@@ -165,7 +165,7 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
    * Delete job progress
    */
   async deleteProgress(jobId: string, userId: string): Promise<void> {
-    await this.redis.del(this.getProgressKey(jobId, userId));
+    await this.getRedis().del(this.getProgressKey(jobId, userId));
     await this.removeUserJob(userId, jobId);
   }
 
@@ -173,7 +173,7 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
    * Get all active jobs for a user
    */
   async getUserActiveJobs(userId: string): Promise<JobProgress[]> {
-    const jobIds = await this.redis.smembers(this.getUserJobsKey(userId));
+    const jobIds = await this.getRedis().smembers(this.getUserJobsKey(userId));
     if (jobIds.length === 0) return [];
 
     const progressList = await this.getMultipleProgress(jobIds, userId);
@@ -190,7 +190,7 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
     progress: JobProgress,
     userId: string,
   ): Promise<void> {
-    await this.redis.setex(
+    await this.getRedis().setex(
       this.getProgressKey(jobId, userId),
       this.TTL,
       JSON.stringify(progress),
@@ -207,12 +207,12 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
 
   private async addUserJob(userId: string, jobId: string): Promise<void> {
     const key = this.getUserJobsKey(userId);
-    await this.redis.sadd(key, jobId);
-    await this.redis.expire(key, this.TTL);
+    await this.getRedis().sadd(key, jobId);
+    await this.getRedis().expire(key, this.TTL);
   }
 
   private async removeUserJob(userId: string, jobId: string): Promise<void> {
-    await this.redis.srem(this.getUserJobsKey(userId), jobId);
+    await this.getRedis().srem(this.getUserJobsKey(userId), jobId);
   }
 
   private calculateProgress(
@@ -231,6 +231,14 @@ export class ProgressTrackerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (!this.redis) return;
     await this.redis.quit();
+  }
+
+  private getRedis(): Redis {
+    if (!this.redis) {
+      throw new Error('Progress tracker Redis connection is not initialized');
+    }
+    return this.redis;
   }
 }

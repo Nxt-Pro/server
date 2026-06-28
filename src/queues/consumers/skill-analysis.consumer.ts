@@ -4,10 +4,14 @@ import { Logger } from '@nestjs/common';
 import { BaseQueueConsumer } from './base-queue.consumer';
 
 import { JobType, QueueName } from '@/common/enums';
-import { SkillAnalysisJobPayload } from '@/common/types';
+import {
+  SkillAnalysisJobPayload,
+  SkillScoringJobPayload,
+} from '@/common/types';
 import {
   GoalkeeperProcessor,
   OutfieldPlayerProcessor,
+  SkillScoringProcessor,
 } from '@/queues/processors';
 import { ProgressTrackerService } from '@/queues/services';
 import type { BullJob } from '@/queues/types';
@@ -23,28 +27,32 @@ export class SkillAnalysisConsumer extends BaseQueueConsumer {
 
   private readonly outfieldProcessor: OutfieldPlayerProcessor;
   private readonly goalkeeperProcessor: GoalkeeperProcessor;
+  private readonly skillScoringProcessor: SkillScoringProcessor;
   private readonly progressTracker: ProgressTrackerService;
 
   constructor(
     outfieldProcessor: OutfieldPlayerProcessor,
     goalkeeperProcessor: GoalkeeperProcessor,
+    skillScoringProcessor: SkillScoringProcessor,
     progressTracker: ProgressTrackerService,
   ) {
     super();
     this.outfieldProcessor = outfieldProcessor;
     this.goalkeeperProcessor = goalkeeperProcessor;
+    this.skillScoringProcessor = skillScoringProcessor;
     this.progressTracker = progressTracker;
   }
 
-  async process(job: BullJob<SkillAnalysisJobPayload>): Promise<unknown> {
+  async process(
+    job: BullJob<SkillAnalysisJobPayload | SkillScoringJobPayload>,
+  ): Promise<unknown> {
     const jobId = job.id;
+    const jobType = job.name as JobType;
     if (!jobId) {
       throw new Error('Job has no id');
     }
 
-    this.logger.log(
-      `Processing skill analysis ${jobId} for video ${job.data.videoId} (${job.data.analysisType})`,
-    );
+    this.logger.log(this.describeJob(job, jobId));
 
     try {
       await this.progressTracker.markProcessing(
@@ -56,13 +64,23 @@ export class SkillAnalysisConsumer extends BaseQueueConsumer {
 
       let result: unknown;
 
-      switch (job.name as JobType) {
+      switch (jobType) {
+        case JobType.SKILL_SCORING:
+          result = await this.processSkillScoring(job, jobId);
+          break;
+
         case JobType.SKILL_ANALYSIS_OUTFIELD:
-          result = await this.processOutfieldAnalysis(job, jobId);
+          result = await this.processOutfieldAnalysis(
+            job as BullJob<SkillAnalysisJobPayload>,
+            jobId,
+          );
           break;
 
         case JobType.SKILL_ANALYSIS_GOALKEEPER:
-          result = await this.processGoalkeeperAnalysis(job, jobId);
+          result = await this.processGoalkeeperAnalysis(
+            job as BullJob<SkillAnalysisJobPayload>,
+            jobId,
+          );
           break;
 
         default:
@@ -75,7 +93,7 @@ export class SkillAnalysisConsumer extends BaseQueueConsumer {
         result,
       );
 
-      this.logger.log(`Skill analysis completed for video ${job.data.videoId}`);
+      this.logger.log(`Skill analysis job ${jobId} completed`);
 
       return result;
     } catch (error: unknown) {
@@ -86,14 +104,56 @@ export class SkillAnalysisConsumer extends BaseQueueConsumer {
         error instanceof Error ? error.stack : undefined,
       );
 
-      await this.progressTracker.markFailed(
-        jobId,
-        job.data.requestedBy,
-        message,
-      );
+      const isFinalAttempt = this.isFinalAttempt(job);
+
+      if (jobType === JobType.SKILL_SCORING && isFinalAttempt) {
+        await this.skillScoringProcessor.markFailed(
+          job.data as SkillScoringJobPayload,
+          message,
+        );
+      }
+
+      if (isFinalAttempt || jobType !== JobType.SKILL_SCORING) {
+        await this.progressTracker.markFailed(
+          jobId,
+          job.data.requestedBy,
+          message,
+        );
+      }
 
       throw error;
     }
+  }
+
+  private describeJob(
+    job: BullJob<SkillAnalysisJobPayload | SkillScoringJobPayload>,
+    jobId: string,
+  ): string {
+    const jobType = job.name as JobType;
+    if (jobType === JobType.SKILL_SCORING) {
+      const data = job.data as SkillScoringJobPayload;
+      return `Processing AI skill scoring ${jobId} for ${data.skillKey}`;
+    }
+    const data = job.data as SkillAnalysisJobPayload;
+    return `Processing skill analysis ${jobId} for video ${data.videoId} (${data.analysisType})`;
+  }
+
+  private isFinalAttempt(
+    job: BullJob<SkillAnalysisJobPayload | SkillScoringJobPayload>,
+  ): boolean {
+    const attempts = Number(job.opts?.attempts ?? 1);
+    const attemptsMade = Number(job.attemptsMade ?? 0);
+    return attemptsMade + 1 >= attempts;
+  }
+
+  private async processSkillScoring(
+    job: BullJob<SkillAnalysisJobPayload | SkillScoringJobPayload>,
+    jobId: string,
+  ): Promise<unknown> {
+    return this.skillScoringProcessor.process(
+      job.data as SkillScoringJobPayload,
+      jobId,
+    );
   }
 
   /**

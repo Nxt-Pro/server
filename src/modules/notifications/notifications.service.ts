@@ -21,7 +21,8 @@ export interface CreateNotificationEvent {
     | 'connection_request'
     | 'verification'
     | 'marketing'
-    | 'new_event';
+    | 'new_event'
+    | 'skill_score';
   referenceId?: string;
   preference?: NotificationPreferenceKey;
 }

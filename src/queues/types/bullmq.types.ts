@@ -3,6 +3,10 @@ export interface BullJob<TData = unknown> {
   id?: string;
   name: string;
   data: TData;
+  attemptsMade?: number;
+  opts?: {
+    attempts?: number;
+  };
   updateProgress?(_progress: unknown): Promise<void>;
 }
 

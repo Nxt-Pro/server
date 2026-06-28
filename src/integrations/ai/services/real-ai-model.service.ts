@@ -15,11 +15,12 @@ import { PlayerProfileRepository } from '@/database/repositories';
 
 const DEFAULT_HEIGHT_CM = 175;
 
-/** NxtPro AI Integration Guide v1.3 — multipart endpoints; shooting/defending/GK use moderation + heuristic. */
+/** Legacy multipart adapter. New skill submissions should use SkillScoringService. */
 @Injectable()
 export class RealAiModelService implements IAiModelService {
   private readonly logger = new Logger(RealAiModelService.name);
-  private readonly baseUrl: string;
+  private readonly skillBaseUrl: string;
+  private readonly moderationBaseUrl: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
 
@@ -28,9 +29,18 @@ export class RealAiModelService implements IAiModelService {
     private readonly playerProfileRepository: PlayerProfileRepository,
   ) {
     const aiConfig = configService.getOrThrow<AiConfig>('ai');
-    this.baseUrl = (aiConfig.apiUrl || '').replace(/\/$/, '');
+    this.skillBaseUrl = (
+      aiConfig.skillServiceUrl ||
+      aiConfig.apiUrl ||
+      ''
+    ).replace(/\/$/, '');
+    this.moderationBaseUrl = (
+      aiConfig.moderationServiceUrl ||
+      aiConfig.apiUrl ||
+      ''
+    ).replace(/\/$/, '');
     this.apiKey = aiConfig.apiKey || '';
-    this.timeoutMs = Number(process.env.AI_MODEL_TIMEOUT_MS ?? '120000');
+    this.timeoutMs = aiConfig.timeoutMs;
   }
 
   async analyzeSkill(input: SkillAnalysisInput): Promise<SkillAnalysisOutput> {
@@ -39,14 +49,11 @@ export class RealAiModelService implements IAiModelService {
     );
 
     if (input.analysisType === AnalysisType.GOALKEEPER) {
-      return this.analyzeWithModerationFallback(input.videoUrl, input.skill);
+      return this.unsupportedSkill(input.skill);
     }
 
-    if (
-      input.skill === OutfieldSkill.SHOOTING ||
-      input.skill === OutfieldSkill.DEFENDING
-    ) {
-      return this.analyzeWithModerationFallback(input.videoUrl, input.skill);
+    if (input.skill === OutfieldSkill.DEFENDING) {
+      return this.unsupportedSkill(input.skill);
     }
 
     const heightCm = await this.resolveHeightCm(input.playerId);
@@ -71,12 +78,14 @@ export class RealAiModelService implements IAiModelService {
           })) as PassingResponse,
         );
       case OutfieldSkill.DRIBBLING:
-        return this.mapDribbling(
-          (await this.postMultipart('/api/dribbling/analyze', () => {
+        return this.unsupportedSkill(input.skill);
+      case OutfieldSkill.SHOOTING:
+        return this.mapShooting(
+          (await this.postMultipart('/api/shooting/analyze', () => {
             const fd = new FormData();
-            fd.append('video', blob, 'dribbling.mp4');
+            fd.append('video', blob, 'shooting.mp4');
             return fd;
-          })) as DribblingResponse,
+          })) as ShootingResponse,
         );
       case OutfieldSkill.PHYSICAL:
         return this.mapPhysicalAgility(
@@ -87,18 +96,18 @@ export class RealAiModelService implements IAiModelService {
           })) as AgilityResponse,
         );
       default:
-        return this.analyzeWithModerationFallback(input.videoUrl, input.skill);
+        return this.unsupportedSkill(input.skill);
     }
   }
 
   async moderateVideo(videoUrl: string): Promise<ModerationAnalysis> {
     this.logger.log(`Moderating video: ${videoUrl}`);
-    const blob = await this.fetchVideoBlob(videoUrl);
-    const data = (await this.postMultipart('/moderate-video', () => {
-      const fd = new FormData();
-      fd.append('video', blob, 'moderation.mp4');
-      return fd;
-    })) as Record<string, unknown>;
+    const data = (await this.postJson(
+      this.moderationBaseUrl,
+      '/moderate-video',
+      { video_url: videoUrl },
+      'AI_MODERATION_SERVICE_URL must be set when USE_MOCK_AI=false',
+    )) as Record<string, unknown>;
 
     return this.mapModerationJson(data);
   }
@@ -129,12 +138,12 @@ export class RealAiModelService implements IAiModelService {
     path: string,
     buildForm: () => FormData,
   ): Promise<unknown> {
-    if (!this.baseUrl || !this.apiKey) {
+    if (!this.skillBaseUrl || !this.apiKey) {
       throw new Error(
-        'AI_MODEL_API_URL and AI_MODEL_API_KEY must be set when USE_MOCK_AI=false',
+        'AI_SKILL_SERVICE_URL and AI_MODEL_API_KEY must be set when USE_MOCK_AI=false',
       );
     }
-    const url = `${this.baseUrl}${path}`;
+    const url = `${this.skillBaseUrl}${path}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}` },
@@ -157,6 +166,52 @@ export class RealAiModelService implements IAiModelService {
     }
 
     return res.json() as Promise<unknown>;
+  }
+
+  private async postJson(
+    baseUrl: string,
+    path: string,
+    body: Record<string, unknown>,
+    missingConfigMessage: string,
+  ): Promise<unknown> {
+    if (!baseUrl) {
+      throw new Error(missingConfigMessage);
+    }
+
+    const url = `${baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+
+    if (!res.ok) {
+      throw new Error(await this.readAiError(res));
+    }
+
+    return res.json() as Promise<unknown>;
+  }
+
+  private async readAiError(res: Response): Promise<string> {
+    let msg = `AI request failed (${res.status})`;
+    try {
+      const errBody = (await res.json()) as {
+        message?: string;
+        detail?: string;
+      };
+      msg = errBody.message ?? errBody.detail ?? msg;
+    } catch {
+      /* ignore */
+    }
+    return msg;
   }
 
   private mapPace(data: PaceResponse): SkillAnalysisOutput {
@@ -214,6 +269,21 @@ export class RealAiModelService implements IAiModelService {
     };
   }
 
+  private mapShooting(data: ShootingResponse): SkillAnalysisOutput {
+    const raw = Number(data.quality_score ?? data.score ?? 0);
+    const score = Math.min(99, Math.max(0, Math.round(raw)));
+    return {
+      score,
+      confidence: Number(data.tracking_confidence ?? 0),
+      keyMoments: [{ timestamp: 0, action: 'shooting', score }],
+      attributes: {
+        quality_score: raw,
+        shot_detected: data.shot_detected ? 1 : 0,
+        peak_ball_speed_px_s: Number(data.peak_ball_speed_px_s ?? 0),
+      },
+    };
+  }
+
   private mapPhysicalAgility(data: AgilityResponse): SkillAnalysisOutput {
     const reps = Number(data.reps ?? 0);
     const duration = Number(data.duration ?? 0);
@@ -259,41 +329,12 @@ export class RealAiModelService implements IAiModelService {
     };
   }
 
-  /**
-   * Guide v1.3 has no dedicated drills for shooting/defending/GK; use moderation pass + stable heuristic score.
-   */
-  private async analyzeWithModerationFallback(
-    videoUrl: string,
+  private unsupportedSkill(
     skill: OutfieldSkill | GoalkeeperSkill,
   ): Promise<SkillAnalysisOutput> {
-    await this.moderateVideo(videoUrl);
-    const score = this.stableScoreFromUrl(videoUrl, String(skill));
-    return {
-      score,
-      confidence: 0.55,
-      keyMoments: [],
-      attributes: {
-        heuristic_marker: 1,
-        skill_code: this.skillCode(String(skill)),
-      },
-    };
-  }
-
-  private skillCode(skill: string): number {
-    let h = 0;
-    for (let i = 0; i < skill.length; i++) {
-      h = (Math.imul(31, h) + skill.charCodeAt(i)) | 0;
-    }
-    return Math.abs(h) % 1000;
-  }
-
-  private stableScoreFromUrl(videoUrl: string, salt: string): number {
-    let h = 0;
-    const s = videoUrl + salt;
-    for (let i = 0; i < s.length; i++) {
-      h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-    }
-    return 62 + (Math.abs(h) % 28);
+    return Promise.reject(
+      new Error(`SKILL_NOT_SUPPORTED: ${skill} is not supported yet`),
+    );
   }
 }
 
@@ -312,6 +353,14 @@ type DribblingResponse = {
   score_breakdown?: unknown;
   slalom?: unknown;
   figure8?: unknown;
+};
+
+type ShootingResponse = {
+  score?: number;
+  quality_score?: number;
+  shot_detected?: boolean;
+  tracking_confidence?: number;
+  peak_ball_speed_px_s?: number;
 };
 
 type AgilityResponse = {

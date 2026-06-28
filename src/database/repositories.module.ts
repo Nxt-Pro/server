@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import {
   AttachmentRepository,
+  AiSkillScoreJobRepository,
   AuditLogRepository,
   MediaModerationRepository,
   PlayerProfileRepository,
@@ -15,6 +16,7 @@ import {
 
 import {
   Attachment,
+  AiSkillScoreJob,
   AuditLog,
   MediaModeration,
   PlayerProfile,
@@ -29,6 +31,7 @@ import {
   imports: [
     TypeOrmModule.forFeature([
       Attachment,
+      AiSkillScoreJob,
       AuditLog,
       MediaModeration,
       PlayerProfile,
@@ -41,6 +44,7 @@ import {
   ],
   providers: [
     AttachmentRepository,
+    AiSkillScoreJobRepository,
     AuditLogRepository,
     MediaModerationRepository,
     PlayerProfileRepository,
@@ -52,6 +56,7 @@ import {
   ],
   exports: [
     AttachmentRepository,
+    AiSkillScoreJobRepository,
     AuditLogRepository,
     MediaModerationRepository,
     PlayerProfileRepository,

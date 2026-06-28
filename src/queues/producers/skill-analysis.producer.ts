@@ -1,5 +1,6 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { BaseProducer } from './base.producer';
 
@@ -8,19 +9,24 @@ import {
   JobProgress,
   PRIORITY_JOB_OPTIONS,
   SkillAnalysisJobPayload,
+  SkillScoringJobPayload,
 } from '@/common/types';
 import { ProgressTrackerService } from '@/queues/services';
 import type { BullQueue } from '@/queues/types';
+import { AiConfig } from '@/config';
 
 @Injectable()
 export class SkillAnalysisProducer extends BaseProducer {
   protected readonly logger = new Logger(SkillAnalysisProducer.name);
+  private readonly aiConfig: AiConfig;
 
   constructor(
     @InjectQueue(QueueName.SKILL_ANALYSIS) queue: BullQueue,
     progressTracker: ProgressTrackerService,
+    configService: ConfigService,
   ) {
     super(queue, progressTracker);
+    this.aiConfig = configService.getOrThrow<AiConfig>('ai');
   }
 
   /**
@@ -55,6 +61,33 @@ export class SkillAnalysisProducer extends BaseProducer {
     );
 
     this.logger.log(`Skill analysis job queued with ID: ${jobId}`);
+
+    return { jobId };
+  }
+
+  async queueSkillScoring(
+    payload: SkillScoringJobPayload,
+  ): Promise<{ jobId: string }> {
+    this.logger.log(
+      `Queueing AI skill scoring job ${payload.scoringJobId} (${payload.skillKey})`,
+    );
+
+    const job = await this.queue.add(JobType.SKILL_SCORING, payload, {
+      ...PRIORITY_JOB_OPTIONS,
+      attempts: Math.max(1, Math.round(this.aiConfig.retryAttempts)),
+      priority: 1,
+    });
+
+    const jobId = job.id ?? 'unknown';
+
+    await this.progressTracker.initProgress(
+      jobId,
+      'analysis',
+      5,
+      payload.requestedBy,
+    );
+
+    this.logger.log(`AI skill scoring job queued with ID: ${jobId}`);
 
     return { jobId };
   }

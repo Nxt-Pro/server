@@ -1,4 +1,5 @@
 export * from './achievement.entity';
+export * from './ai-skill-score-job.entity';
 export * from './attachment.entity';
 export * from './audit-log.entity';
 export * from './base.entity';

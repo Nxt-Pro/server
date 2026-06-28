@@ -27,6 +27,7 @@ export class Notification extends BaseEntity {
       'verification',
       'marketing',
       'new_event',
+      'skill_score',
     ],
   })
   type:
@@ -36,7 +37,8 @@ export class Notification extends BaseEntity {
     | 'connection_request'
     | 'verification'
     | 'marketing'
-    | 'new_event';
+    | 'new_event'
+    | 'skill_score';
 
   @Column({ type: 'varchar', nullable: true, name: 'reference_id' })
   referenceId: string | null;

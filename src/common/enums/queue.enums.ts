@@ -7,6 +7,7 @@ export enum QueueName {
 export enum JobType {
   VIDEO_UPLOAD = 'video-upload',
   VIDEO_MODERATION = 'video-moderation',
+  SKILL_SCORING = 'skill-scoring',
   SKILL_ANALYSIS_OUTFIELD = 'skill-analysis-outfield',
   SKILL_ANALYSIS_GOALKEEPER = 'skill-analysis-goalkeeper',
   PUSH_NOTIFICATION = 'push-notification',

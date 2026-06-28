@@ -1,4 +1,5 @@
 export * from './attachment.repository';
+export * from './ai-skill-score-job.repository';
 export * from './audit-log.repository';
 export * from './base.repository';
 export * from './media-moderation.repository';

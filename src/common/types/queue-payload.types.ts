@@ -25,6 +25,22 @@ export interface SkillAnalysisJobPayload {
   requestedBy: string;
 }
 
+export interface SkillScoringMediaInput {
+  url: string;
+  mimeType?: string;
+  fileName?: string;
+  sizeBytes?: number;
+}
+
+export interface SkillScoringJobPayload {
+  scoringJobId: string;
+  playerId: string;
+  requestedBy: string;
+  skillKey: string;
+  media: Record<string, SkillScoringMediaInput>;
+  heightCm?: number;
+}
+
 export interface NotificationJobPayload {
   userId: string;
   title: string;

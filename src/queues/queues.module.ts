@@ -7,6 +7,7 @@ import {
   GoalkeeperProcessor,
   ModerationProcessor,
   OutfieldPlayerProcessor,
+  SkillScoringProcessor,
   UploadProcessor,
 } from './processors';
 import { SkillAnalysisProducer, VideoUploadProducer } from './producers';
@@ -285,6 +286,7 @@ const queueInfrastructureDisabled = isQueueInfrastructureDisabled();
           ModerationProcessor,
           OutfieldPlayerProcessor,
           GoalkeeperProcessor,
+          SkillScoringProcessor,
         ]),
 
     // Utils
