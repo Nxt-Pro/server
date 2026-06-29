@@ -14,7 +14,7 @@ describe('SkillAnalysisProducer AI scoring jobs', () => {
       getOrThrow: jest.fn().mockReturnValue({ retryAttempts: 4 }),
     };
     const producer = new SkillAnalysisProducer(
-      queue as never,
+      queue,
       progressTracker as never,
       configService as never,
     );

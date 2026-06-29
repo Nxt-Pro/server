@@ -204,7 +204,7 @@ describe('RegistrationsService notifications', () => {
         ...event,
         organizer: { id: 'organizer_1' } as User,
         participantCount: 1,
-      } as Event,
+      },
     } as EventRegistration;
     const manager = {
       findOne: jest.fn().mockResolvedValue(activeRegistration),

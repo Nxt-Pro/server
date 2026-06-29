@@ -18,6 +18,25 @@ import {
   NotificationPreferencesService,
 } from '@/modules/settings';
 
+const CHAT_PROFILE_RELATIONS = [
+  'participants',
+  'participants.user',
+  'participants.user.playerProfile',
+  'participants.user.scoutProfile',
+  'scout',
+  'scout.playerProfile',
+  'scout.scoutProfile',
+  'player',
+  'player.playerProfile',
+  'player.scoutProfile',
+];
+
+const MESSAGE_SENDER_RELATIONS = [
+  'sender',
+  'sender.playerProfile',
+  'sender.scoutProfile',
+];
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -94,7 +113,7 @@ export class ChatService {
         scout: { id: scoutId },
         player: { id: playerId },
       },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     if (existing) {
@@ -150,7 +169,7 @@ export class ChatService {
 
     const createdChat = await this.chatRepository.findOneOrFail({
       where: { id: savedChat.id },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     if (!isScoutInitiator) {
@@ -203,7 +222,7 @@ export class ChatService {
   acceptChat = async (chatId: string, scoutId: string): Promise<Chat> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     if (!chat) {
@@ -268,14 +287,14 @@ export class ChatService {
 
     return this.chatRepository.findOneOrFail({
       where: { id: chatId },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
   };
 
   rejectChat = async (chatId: string, scoutId: string): Promise<Chat> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     if (!chat) {
@@ -304,7 +323,7 @@ export class ChatService {
     const scoutName = this.getDisplayName(chat.scout);
     const rejectedChat = await this.chatRepository.findOneOrFail({
       where: { id: chatId },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     this.eventEmitter.emit('chat.rejected', {
@@ -352,9 +371,21 @@ export class ChatService {
     return this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndSelect('chat.scout', 'scout')
+      .leftJoinAndSelect('scout.playerProfile', 'scoutPlayerProfile')
+      .leftJoinAndSelect('scout.scoutProfile', 'scoutScoutProfile')
       .leftJoinAndSelect('chat.player', 'player')
+      .leftJoinAndSelect('player.playerProfile', 'playerPlayerProfile')
+      .leftJoinAndSelect('player.scoutProfile', 'playerScoutProfile')
       .leftJoinAndSelect('chat.participants', 'participants')
       .leftJoinAndSelect('participants.user', 'participantUser')
+      .leftJoinAndSelect(
+        'participantUser.playerProfile',
+        'participantUserPlayerProfile',
+      )
+      .leftJoinAndSelect(
+        'participantUser.scoutProfile',
+        'participantUserScoutProfile',
+      )
       .where('scout.id = :userId OR player.id = :userId', { userId })
       .orderBy('chat.last_message_at', 'DESC')
       .getMany();
@@ -363,7 +394,7 @@ export class ChatService {
   getChatById = async (chatId: string, userId: string): Promise<Chat> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     if (!chat) {
@@ -391,7 +422,7 @@ export class ChatService {
 
     const [data, total] = await this.messageRepository.findAndCount({
       where,
-      relations: ['sender'],
+      relations: MESSAGE_SENDER_RELATIONS,
       order: { createdAt: 'DESC' },
       take: limit,
       skip: offset,
@@ -407,7 +438,7 @@ export class ChatService {
   ): Promise<Message & { clientMessageId?: string }> => {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
-      relations: ['scout', 'player', 'participants', 'participants.user'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
 
     if (!chat) {
@@ -458,11 +489,11 @@ export class ChatService {
 
     const savedMessageWithSender = await this.messageRepository.findOneOrFail({
       where: { id: savedMessage.id },
-      relations: ['sender', 'chat'],
+      relations: [...MESSAGE_SENDER_RELATIONS, 'chat'],
     });
     const updatedChat = await this.chatRepository.findOneOrFail({
       where: { id: chatId },
-      relations: ['participants', 'participants.user', 'scout', 'player'],
+      relations: CHAT_PROFILE_RELATIONS,
     });
     const participantIds = [chat.scout?.id, chat.player?.id].filter(
       (id): id is string => Boolean(id),
@@ -701,7 +732,7 @@ export class ChatService {
         ...where,
         attachmentUrl: Not(IsNull()),
       },
-      relations: ['sender'],
+      relations: MESSAGE_SENDER_RELATIONS,
       order: { createdAt: 'DESC' },
       take: 100,
     });

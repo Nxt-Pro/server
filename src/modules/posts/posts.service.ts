@@ -615,7 +615,7 @@ export class PostsService {
     await this.ensurePostVisible(postId, userId);
     const [comments, total] = await this.commentRepository.findAndCount({
       where: { postId },
-      relations: ['user'],
+      relations: ['user', 'user.playerProfile', 'user.scoutProfile'],
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -645,7 +645,11 @@ export class PostsService {
     await this.commentRepository.save(comment);
     await this.postRepository.increment({ id: postId }, 'commentsCount', 1);
     await this.notifyPostCommented(post, userId, dto.content);
-    return this.toCommentResponse(comment);
+    const savedComment = await this.commentRepository.findOne({
+      where: { id: comment.id },
+      relations: ['user', 'user.playerProfile', 'user.scoutProfile'],
+    });
+    return this.toCommentResponse(savedComment ?? comment);
   }
 
   async deleteComment(commentId: string, userId: string): Promise<void> {
@@ -1154,7 +1158,7 @@ export class PostsService {
     return {
       id: user.id,
       role: user.role,
-      name: user.email,
+      name: user.username ?? user.email,
       profilePictureUrl: null,
       profile_picture_url: null,
       avatarUrl: null,
@@ -1189,10 +1193,14 @@ export class PostsService {
   }
 
   private toCommentResponse(comment: Comment): CommentResponseDto {
+    const author = this.toPostAuthorResponse(comment.user);
+
     return {
       id: comment.id,
       postId: comment.postId,
       userId: comment.userId,
+      userName: author?.name ?? comment.userId,
+      userAvatarUrl: author?.profilePictureUrl ?? null,
       content: comment.content,
       parentCommentId: comment.parentComment ?? undefined,
       isReported: comment.isReported,

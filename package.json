@@ -33,7 +33,10 @@
     "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d src/config/data-source.config.ts",
     "migration:revert": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d src/config/data-source.config.ts",
     "check:entities": "ts-node -r tsconfig-paths/register -e \"import { AppDataSource } from './src/config/data-source.config'; AppDataSource.initialize().then(() => { console.log('Entities:', AppDataSource.entityMetadatas.map(e => e.name)); process.exit(0); });\"",
-    "seed:run": "ts-node -r tsconfig-paths/register ./src/database/seeders/index.ts"
+    "seed:run": "ts-node -r tsconfig-paths/register ./src/database/seeders/index.ts",
+    "seed:dev": "node dist/src/scripts/dev-seed.js seed",
+    "seed:dev:undo": "node dist/src/scripts/dev-seed.js undo",
+    "seed:dev:reset": "node dist/src/scripts/dev-seed.js reset"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",
