@@ -742,15 +742,35 @@ export class PostsService {
     page = 1,
     limit = 20,
     filterByUser = true,
+    targetUserId?: string,
   ): Promise<PaginatedVideosDto> {
+    const hiddenUserIds = await this.getHiddenUserIds(userId);
     const qb = this.videoRepository
       .createQueryBuilder('v')
       .innerJoinAndSelect('v.attachment', 'a')
       .innerJoinAndSelect('a.post', 'p')
       .orderBy('p.createdAt', 'DESC');
 
-    if (filterByUser) {
+    if (targetUserId) {
+      qb.andWhere('p.userId = :targetUserId', { targetUserId });
+      if (targetUserId !== userId) {
+        qb.andWhere('p.visibility = :publicVisibility', {
+          publicVisibility: 'public',
+        });
+      }
+      if (hiddenUserIds.includes(targetUserId)) {
+        qb.andWhere('1 = 0');
+      }
+    } else if (filterByUser) {
       qb.andWhere('p.userId = :userId', { userId });
+    } else {
+      qb.andWhere('(p.visibility = :publicVisibility OR p.userId = :userId)', {
+        publicVisibility: 'public',
+        userId,
+      });
+      if (hiddenUserIds.length > 0) {
+        qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
+      }
     }
 
     const [videos, total] = await qb

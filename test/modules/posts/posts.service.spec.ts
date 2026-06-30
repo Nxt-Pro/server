@@ -26,6 +26,7 @@ type RepositoryMock = {
   delete: jest.Mock;
   find: jest.Mock;
   findAndCount: jest.Mock;
+  createQueryBuilder?: jest.Mock;
 };
 
 type PostResponseForTest = {
@@ -56,6 +57,9 @@ function createService(
     likeRepository?: Partial<Repository<Like>>;
     commentRepository?: Partial<Repository<Comment>>;
     userRepository?: Partial<Repository<User>>;
+    videoRepository?: Partial<Repository<Video>>;
+    blockRepository?: Partial<Repository<Block>>;
+    muteRepository?: Partial<Repository<Mute>>;
     mediaUrlService?: Partial<MediaUrlService>;
     eventEmitter?: { emit: jest.Mock };
   } = {},
@@ -76,6 +80,18 @@ function createService(
     ...createRepositoryMock(),
     ...overrides.userRepository,
   };
+  const videoRepository = {
+    ...createRepositoryMock(),
+    ...overrides.videoRepository,
+  };
+  const blockRepository = {
+    ...createRepositoryMock(),
+    ...overrides.blockRepository,
+  };
+  const muteRepository = {
+    ...createRepositoryMock(),
+    ...overrides.muteRepository,
+  };
   const emptyRepository = createRepositoryMock();
   const mediaUrlService = {
     resolvePublicMediaUrl: jest.fn((value?: string | null) =>
@@ -93,10 +109,10 @@ function createService(
     emptyRepository as unknown as Repository<Bookmark>,
     userRepository as unknown as Repository<User>,
     emptyRepository as unknown as Repository<MediaModeration>,
-    emptyRepository as unknown as Repository<Video>,
+    videoRepository as unknown as Repository<Video>,
     emptyRepository as unknown as Repository<Report>,
-    emptyRepository as unknown as Repository<Block>,
-    emptyRepository as unknown as Repository<Mute>,
+    blockRepository as unknown as Repository<Block>,
+    muteRepository as unknown as Repository<Mute>,
     mediaUrlService as unknown as MediaUrlService,
     eventEmitter as never,
   );
@@ -107,9 +123,24 @@ function createService(
     likeRepository,
     commentRepository,
     userRepository,
+    videoRepository,
+    blockRepository,
+    muteRepository,
     mediaUrlService,
     eventEmitter,
   };
+}
+
+function createQueryBuilderMock() {
+  const qb = {
+    innerJoinAndSelect: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
+  return qb;
 }
 
 function createPost(overrides: Partial<Post> = {}): Post {
@@ -332,5 +363,43 @@ describe('PostsService engagement notifications', () => {
       referenceId: post.id,
       preference: 'postEngagement',
     });
+  });
+});
+
+describe('PostsService video scoping', () => {
+  it('filters profile videos by the requested viewed player id', async () => {
+    const qb = createQueryBuilderMock();
+    const videoRepository = createRepositoryMock();
+    videoRepository.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    const { service } = createService({ videoRepository });
+
+    await service.listVideos('viewer_1', 1, 18, true, 'player_x');
+
+    expect(qb.andWhere).toHaveBeenCalledWith('p.userId = :targetUserId', {
+      targetUserId: 'player_x',
+    });
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      'p.visibility = :publicVisibility',
+      {
+        publicVisibility: 'public',
+      },
+    );
+  });
+
+  it('does not require public visibility when requesting your own videos', async () => {
+    const qb = createQueryBuilderMock();
+    const videoRepository = createRepositoryMock();
+    videoRepository.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    const { service } = createService({ videoRepository });
+
+    await service.listVideos('player_x', 1, 18, true, 'player_x');
+
+    expect(qb.andWhere).toHaveBeenCalledWith('p.userId = :targetUserId', {
+      targetUserId: 'player_x',
+    });
+    expect(qb.andWhere).not.toHaveBeenCalledWith(
+      'p.visibility = :publicVisibility',
+      expect.anything(),
+    );
   });
 });

@@ -59,6 +59,7 @@ export class PostsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('mine') mine?: string,
+    @Query('userId') targetUserId?: string,
   ) {
     const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
     const limitNum = Math.min(
@@ -71,6 +72,7 @@ export class PostsController {
       pageNum,
       limitNum,
       filterByUser,
+      targetUserId,
     );
   }
 
