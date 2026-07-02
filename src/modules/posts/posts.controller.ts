@@ -73,12 +73,13 @@ export class PostsController {
       limitNum,
       filterByUser,
       targetUserId,
+      user.role,
     );
   }
 
   @Get('videos/:id')
   getVideo(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
-    return this.postsService.getVideo(id, user.sub);
+    return this.postsService.getVideo(id, user.sub, user.role);
   }
 
   @Patch('videos/:id')
@@ -113,7 +114,12 @@ export class PostsController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getHighlightsFeed(user?.sub, page, limit);
+    return this.postsService.getHighlightsFeed(
+      user?.sub,
+      page,
+      limit,
+      user?.role,
+    );
   }
 
   @Get('trending')
@@ -123,7 +129,12 @@ export class PostsController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getTrendingFeed(user?.sub, page, limit);
+    return this.postsService.getTrendingFeed(
+      user?.sub,
+      page,
+      limit,
+      user?.role,
+    );
   }
 
   @Get('bookmarks')
@@ -159,7 +170,7 @@ export class PostsController {
     @Param('id') postId: string,
     @CurrentUser() user: JwtPayload | undefined,
   ) {
-    return this.postsService.getPost(postId, user?.sub);
+    return this.postsService.getPost(postId, user?.sub, user?.role);
   }
 
   @Post(':id/like')
@@ -180,7 +191,13 @@ export class PostsController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.postsService.getComments(postId, user?.sub, page, limit);
+    return this.postsService.getComments(
+      postId,
+      user?.sub,
+      page,
+      limit,
+      user?.role,
+    );
   }
 
   @Post(':id/comment')
@@ -228,6 +245,7 @@ export class PostsController {
       limit,
       onlyMine,
       targetUserId,
+      user?.role,
     );
   }
 }

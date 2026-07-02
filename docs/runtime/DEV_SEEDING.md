@@ -63,8 +63,8 @@ NxtProDev!2026
 
 Admins:
 
-- `admin.ops@dev.nxtpro.local`
-- `admin.moderation@dev.nxtpro.local`
+- `amara.okafor@dev.nxtpro.local`
+- `julia.martin@dev.nxtpro.local`
 
 Players:
 
@@ -75,6 +75,7 @@ Players:
 - `diego.alvarez@dev.nxtpro.local`
 - `omar.benali@dev.nxtpro.local`
 - `noah.reed@dev.nxtpro.local`
+- `ethan.brooks@dev.nxtpro.local` (banned visibility fixture)
 
 Scouts:
 
@@ -116,9 +117,9 @@ Seeded videos intentionally keep `video_thumbnail_url` empty until real thumbnai
 
 The dataset includes:
 
-- 12 users
+- 13 users
 - 2 admins
-- 7 players
+- 8 players
 - 3 scouts
 - complete player and scout profiles
 - player stats, achievements, and career timeline entries
@@ -137,6 +138,16 @@ The dataset includes:
 - recommendation exclusion fixtures:
   - scout `maya.cole@dev.nxtpro.local` blocks player `leo.fischer@dev.nxtpro.local`
   - scout `maya.cole@dev.nxtpro.local` mutes player `noah.reed@dev.nxtpro.local`
+- account-status visibility fixture:
+  - player `ethan.brooks@dev.nxtpro.local` is banned; public/scout feeds, profile discovery, search, profile detail, post detail, and profile videos should hide him, while admin user management can still inspect the account
+
+## Visibility Fixtures
+
+Seeded visibility relationships are deliberately one-way and production-like:
+
+- Maya Cole blocks Leo Fischer. Leo should be hidden from Maya's feeds, media lists, direct post lookups, and recommendations. Leo remains visible to other active users.
+- Maya Cole mutes Noah Reed. Noah should be hidden from Maya's feeds and recommendations. Noah remains visible to other active users.
+- Ethan Brooks is banned. Ethan should not appear to regular users or scouts in public discovery, search, feeds, post details, comments, or video/profile media. Admin-only user management can still show the banned account for moderation review.
 
 ## AI Scoring Gaps
 
@@ -149,6 +160,7 @@ The player profile `skill_scores` intentionally leave gaps for AI scoring tests 
 - Diego Alvarez: has `pace`, `dribbling`; missing `passing`, `physical`
 - Omar Benali: has `physical`; missing `pace`, `passing`, `dribbling`
 - Noah Reed: has `passing`, `physical`; missing `pace`, `dribbling`
+- Ethan Brooks: has `pace`, `passing`, `dribbling`; missing `physical`
 
 Other seeded skills, such as `shooting`, `defending`, and goalkeeper-specific scores, remain populated where relevant.
 

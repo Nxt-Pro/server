@@ -252,7 +252,7 @@ export class AiRecommendationService {
       await Promise.all([
         this.users.findOne({ where: { id: scoutId } }),
         this.scoutProfiles.findOne({ where: { userId: scoutId } }),
-        this.getMutualHiddenUserIds(scoutId),
+        this.getViewerHiddenUserIds(scoutId),
         this.getHandledPlayerIds(scoutId),
         this.getViewerSignals(scoutId),
       ]);
@@ -350,27 +350,19 @@ export class AiRecommendationService {
         relations: ['user'],
       }),
       this.blocks.find({
-        where: [
-          { blockerId: scoutId, blockedId: In(candidateIds) },
-          { blockerId: In(candidateIds), blockedId: scoutId },
-        ],
+        where: { blockerId: scoutId, blockedId: In(candidateIds) },
       }),
       this.mutes.find({
-        where: [
-          { muterId: scoutId, mutedId: In(candidateIds) },
-          { muterId: In(candidateIds), mutedId: scoutId },
-        ],
+        where: { muterId: scoutId, mutedId: In(candidateIds) },
       }),
     ]);
 
     const excludedIds = new Set<string>();
     for (const block of blocks) {
-      excludedIds.add(
-        block.blockerId === scoutId ? block.blockedId : block.blockerId,
-      );
+      excludedIds.add(block.blockedId);
     }
     for (const mute of mutes) {
-      excludedIds.add(mute.muterId === scoutId ? mute.mutedId : mute.muterId);
+      excludedIds.add(mute.mutedId);
     }
 
     const profileById = new Map(
@@ -428,24 +420,22 @@ export class AiRecommendationService {
     };
   }
 
-  private async getMutualHiddenUserIds(userId: string): Promise<string[]> {
+  private async getViewerHiddenUserIds(userId: string): Promise<string[]> {
     const [blocks, mutes] = await Promise.all([
       this.blocks.find({
-        where: [{ blockerId: userId }, { blockedId: userId }],
+        where: { blockerId: userId },
       }),
       this.mutes.find({
-        where: [{ muterId: userId }, { mutedId: userId }],
+        where: { muterId: userId },
       }),
     ]);
 
     const excluded = new Set<string>();
     for (const block of blocks) {
-      excluded.add(
-        block.blockerId === userId ? block.blockedId : block.blockerId,
-      );
+      excluded.add(block.blockedId);
     }
     for (const mute of mutes) {
-      excluded.add(mute.muterId === userId ? mute.mutedId : mute.muterId);
+      excluded.add(mute.mutedId);
     }
     return [...excluded];
   }

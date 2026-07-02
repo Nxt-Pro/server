@@ -57,6 +57,7 @@ interface AccountSeed {
   email: string;
   username: string;
   role: Role;
+  status?: 'active' | 'suspended' | 'banned';
   phone: string;
   lastActiveDaysAgo: number;
   avatarGender: 'M' | 'F';
@@ -137,8 +138,8 @@ interface DeletionSummary {
 const admins: AdminSeed[] = [
   {
     key: 'admin_ops',
-    email: `admin.ops@${SEED_DOMAIN}`,
-    username: 'dev_admin_ops',
+    email: `amara.okafor@${SEED_DOMAIN}`,
+    username: 'amara_okafor_admin',
     role: 'admin',
     phone: '+15550101001',
     lastActiveDaysAgo: 0,
@@ -146,8 +147,8 @@ const admins: AdminSeed[] = [
   },
   {
     key: 'admin_moderation',
-    email: `admin.moderation@${SEED_DOMAIN}`,
-    username: 'dev_admin_moderation',
+    email: `julia.martin@${SEED_DOMAIN}`,
+    username: 'julia_martin_admin',
     role: 'admin',
     phone: '+15550101002',
     lastActiveDaysAgo: 1,
@@ -160,6 +161,7 @@ const preferredAvatarAssets: Record<string, string> = {
   samir_okafor: 'avatar21M.jpg',
   diego_alvarez: 'avatar18M.jpg',
   noah_reed: 'avatar20M.jpg',
+  ethan_brooks: 'avatar19M.jpg',
 };
 
 function avatarGenderFromAsset(filePath: string): 'M' | 'F' | null {
@@ -400,6 +402,37 @@ const players: PlayerSeed[] = [
       passing: 74,
       defending: 80,
       physical: 78,
+    },
+  },
+  {
+    key: 'ethan_brooks',
+    email: `ethan.brooks@${SEED_DOMAIN}`,
+    username: 'ethan_brooks_11',
+    role: 'player',
+    status: 'banned',
+    phone: '+15550201008',
+    lastActiveDaysAgo: 16,
+    avatarGender: 'M',
+    fullName: 'Ethan Brooks',
+    dateOfBirth: '2004-01-09',
+    nationality: 'English',
+    position: 'Left Winger',
+    secondaryPositions: ['Striker'],
+    preferredFoot: 'right',
+    heightCm: 179,
+    weightKg: 72,
+    city: 'Manchester',
+    country: 'England',
+    clubName: 'North Bridge Academy',
+    availabilityStatus: 'available',
+    bio: 'Wide forward fixture kept banned for visibility and moderation smoke testing.',
+    aiScore: 77.2,
+    skillScores: {
+      pace: 82,
+      shooting: 75,
+      passing: 70,
+      dribbling: 84,
+      defending: 43,
     },
   },
 ];
@@ -991,7 +1024,7 @@ async function seedUsers(queryRunner: QueryRunner, media: SeedMedia) {
       username: account.username,
       passwordHash,
       role: account.role,
-      status: 'active',
+      status: account.status ?? 'active',
       phone: account.phone,
       lastActive: daysAgo(account.lastActiveDaysAgo),
       fcmTokens: [],
@@ -1188,6 +1221,7 @@ async function seedPosts(queryRunner: QueryRunner, ctx: SeedContext) {
     'diego_alvarez',
     'omar_benali',
     'noah_reed',
+    'ethan_brooks',
   ];
   const videoPostIndexes = new Set([
     0, 2, 4, 7, 8, 9, 12, 14, 16, 18, 19, 20, 21,
@@ -1316,10 +1350,12 @@ async function seedEngagement(queryRunner: QueryRunner, ctx: SeedContext) {
   let likes = 0;
   let comments = 0;
   let bookmarks = 0;
-  const seedUserKeys = Object.keys(ctx.users);
+  const activeSeedUserKeys = allAccounts
+    .filter(account => (account.status ?? 'active') === 'active')
+    .map(account => account.key);
 
   for (const [postIndex, post] of ctx.posts.entries()) {
-    const likerKeys = seedUserKeys
+    const likerKeys = activeSeedUserKeys
       .filter(key => ctx.users[key].id !== post.userId)
       .slice(postIndex % 4, (postIndex % 4) + 4);
 
@@ -1355,7 +1391,9 @@ async function seedEngagement(queryRunner: QueryRunner, ctx: SeedContext) {
 
     if (postIndex % 3 === 0) {
       const user =
-        ctx.users[seedUserKeys[(postIndex + 5) % seedUserKeys.length]];
+        ctx.users[
+          activeSeedUserKeys[(postIndex + 5) % activeSeedUserKeys.length]
+        ];
       await manager.getRepository(Bookmark).save(
         manager.getRepository(Bookmark).create({
           userId: user.id,
@@ -2054,6 +2092,7 @@ async function writeSeedOutput(ctx: SeedContext) {
     username: account.username,
     password: SEED_PASSWORD,
     role: account.role,
+    status: account.status ?? 'active',
     userId: ctx.users[account.key].id,
     profileId:
       account.role === 'player'
@@ -2076,6 +2115,7 @@ async function writeSeedOutput(ctx: SeedContext) {
           scoutId: ctx.scouts.maya_cole.userId,
           blockedPlayerId: ctx.players.leo_fischer.userId,
           mutedPlayerId: ctx.players.noah_reed.userId,
+          bannedPlayerId: ctx.players.ethan_brooks.userId,
           publicPostId: ctx.posts[0].id,
           videoPostId: ctx.posts.find(post => post.isHighlight)?.id,
           activeChatId: ctx.chats[0].id,

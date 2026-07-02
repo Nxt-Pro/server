@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import type {
   AddAttachmentDto,
   AiVideoResponseDto,
@@ -333,7 +333,7 @@ export class PostsService {
       if (personalized) return personalized;
     }
 
-    return this.getGenericFypFeed(userId, page, limit);
+    return this.getGenericFypFeed(userId, page, limit, undefined, user?.role);
   }
 
   private async getGenericFypFeed(
@@ -341,6 +341,7 @@ export class PostsService {
     page: number,
     limit: number,
     recommendation?: RecommendationMetadata,
+    viewerRole?: string,
   ): Promise<PaginatedPostsDto> {
     const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
@@ -354,6 +355,8 @@ export class PostsService {
       .where('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.createdAt', 'DESC');
+
+    this.applyActiveAuthorFilter(qb, 'u', viewerRole);
 
     if (hiddenUserIds.length > 0) {
       qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
@@ -453,6 +456,8 @@ export class PostsService {
       .addOrderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.createdAt', 'DESC');
 
+    this.applyActiveAuthorFilter(qb, 'u');
+
     const [posts, total] = await qb
       .skip((page - 1) * limit)
       .take(limit)
@@ -487,6 +492,7 @@ export class PostsService {
     limit: number,
     onlyMine = true,
     targetUserId?: string,
+    viewerRole?: string,
   ): Promise<PaginatedPostsDto> {
     const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
@@ -526,6 +532,8 @@ export class PostsService {
       }
     }
 
+    this.applyActiveAuthorFilter(qb, 'u', viewerRole);
+
     const [posts, total] = await qb
       .skip((page - 1) * limit)
       .take(limit)
@@ -545,6 +553,7 @@ export class PostsService {
     userId: string | undefined,
     page: number,
     limit: number,
+    viewerRole?: string,
   ): Promise<PaginatedPostsDto> {
     const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
@@ -558,6 +567,8 @@ export class PostsService {
       .where('p.isHighlight = :isHighlight', { isHighlight: true })
       .andWhere('p.visibility = :visibility', { visibility: 'public' })
       .orderBy('p.createdAt', 'DESC');
+
+    this.applyActiveAuthorFilter(qb, 'u', viewerRole);
 
     if (hiddenUserIds.length > 0) {
       qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
@@ -582,6 +593,7 @@ export class PostsService {
     userId: string | undefined,
     page: number,
     limit: number,
+    viewerRole?: string,
   ): Promise<PaginatedPostsDto> {
     const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
@@ -596,6 +608,8 @@ export class PostsService {
       .orderBy('p.engagementScore', 'DESC')
       .addOrderBy('p.viewsCount', 'DESC')
       .addOrderBy('p.createdAt', 'DESC');
+
+    this.applyActiveAuthorFilter(qb, 'u', viewerRole);
 
     if (hiddenUserIds.length > 0) {
       qb.andWhere('p.userId NOT IN (:...hiddenUserIds)', { hiddenUserIds });
@@ -630,6 +644,7 @@ export class PostsService {
   async getPost(
     postId: string,
     userId: string | undefined,
+    viewerRole?: string,
   ): Promise<PostResponseDto> {
     const post = await this.postRepository.findOne({
       where: { id: postId },
@@ -644,6 +659,7 @@ export class PostsService {
     if (!post) {
       throw new NotFoundException('Post not found');
     }
+    await this.assertPostVisibleToViewer(post, userId, viewerRole);
     if (post.visibility === 'private' && post.userId !== userId) {
       throw new NotFoundException('Post not found');
     }
@@ -696,6 +712,7 @@ export class PostsService {
           attachments?: (Attachment & { video?: Video })[];
         } =>
           Boolean(post) &&
+          this.isAuthorActiveForViewer(post!) &&
           (post!.visibility !== 'private' || post!.userId === userId),
       );
 
@@ -709,7 +726,7 @@ export class PostsService {
   }
 
   async likePost(postId: string, userId: string): Promise<LikeResponseDto> {
-    const existingPost = await this.ensurePostExists(postId);
+    const existingPost = await this.ensurePostVisible(postId, userId);
     const existing = await this.likeRepository.findOne({
       where: { postId, userId },
     });
@@ -740,15 +757,23 @@ export class PostsService {
     userId: string | undefined,
     page: number,
     limit: number,
+    viewerRole?: string,
   ): Promise<PaginatedCommentsDto> {
     await this.ensurePostVisible(postId, userId);
-    const [comments, total] = await this.commentRepository.findAndCount({
-      where: { postId },
-      relations: ['user', 'user.playerProfile', 'user.scoutProfile'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.commentRepository
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.user', 'u')
+      .leftJoinAndSelect('u.playerProfile', 'upp')
+      .leftJoinAndSelect('u.scoutProfile', 'usp')
+      .where('c.postId = :postId', { postId })
+      .orderBy('c.createdAt', 'DESC');
+
+    this.applyActiveAuthorFilter(qb, 'u', viewerRole);
+
+    const [comments, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
     const data = comments.map(c => this.toCommentResponse(c));
     return {
       data,
@@ -813,7 +838,7 @@ export class PostsService {
     postId: string,
     userId: string,
   ): Promise<BookmarkResponseDto> {
-    await this.ensurePostExists(postId);
+    await this.ensurePostVisible(postId, userId);
     const existing = await this.bookmarkRepository.findOne({
       where: { userId, bookmarkableId: postId, bookmarkableType: 'post' },
     });
@@ -849,15 +874,20 @@ export class PostsService {
     return { sharesCount: post?.sharesCount ?? 1 };
   }
 
-  async getVideo(id: string, userId?: string): Promise<VideoResponseDto> {
+  async getVideo(
+    id: string,
+    userId?: string,
+    viewerRole?: string,
+  ): Promise<VideoResponseDto> {
     const video = await this.videoRepository.findOne({
       where: { id },
-      relations: ['attachment', 'attachment.post'],
+      relations: ['attachment', 'attachment.post', 'attachment.post.user'],
     });
     if (!video?.attachment?.post) {
       throw new NotFoundException('Video not found');
     }
     const post = video.attachment.post;
+    await this.assertPostVisibleToViewer(post, userId, viewerRole);
     if (userId && post.userId !== userId) {
       if (post.visibility === 'private') {
         throw new NotFoundException('Video not found');
@@ -872,13 +902,17 @@ export class PostsService {
     limit = 20,
     filterByUser = true,
     targetUserId?: string,
+    viewerRole?: string,
   ): Promise<PaginatedVideosDto> {
     const hiddenUserIds = await this.getHiddenUserIds(userId);
     const qb = this.videoRepository
       .createQueryBuilder('v')
       .innerJoinAndSelect('v.attachment', 'a')
       .innerJoinAndSelect('a.post', 'p')
+      .innerJoin('p.user', 'u')
       .orderBy('p.createdAt', 'DESC');
+
+    this.applyActiveAuthorFilter(qb, 'u', viewerRole);
 
     if (targetUserId) {
       qb.andWhere('p.userId = :targetUserId', { targetUserId });
@@ -1014,24 +1048,23 @@ export class PostsService {
   }
 
   /**
-   * Returns IDs of users that the given user has blocked or muted.
-   * Used to filter those users' posts out of feeds.
+   * Returns IDs hidden by this viewer's own block and mute choices.
    */
   private async getHiddenUserIds(userId: string): Promise<string[]> {
     const [blocks, mutes] = await Promise.all([
       this.blockRepository.find({
-        where: [{ blockerId: userId }, { blockedId: userId }],
+        where: { blockerId: userId },
       }),
       this.muteRepository.find({
-        where: [{ muterId: userId }, { mutedId: userId }],
+        where: { muterId: userId },
       }),
     ]);
     const ids = new Set<string>();
     for (const block of blocks) {
-      ids.add(block.blockerId === userId ? block.blockedId : block.blockerId);
+      ids.add(block.blockedId);
     }
     for (const mute of mutes) {
-      ids.add(mute.muterId === userId ? mute.mutedId : mute.muterId);
+      ids.add(mute.mutedId);
     }
     return [...ids];
   }
@@ -1048,14 +1081,57 @@ export class PostsService {
     postId: string,
     userId: string | undefined,
   ): Promise<Post> {
-    const post = await this.postRepository.findOne({ where: { id: postId } });
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+      relations: ['user'],
+    });
     if (!post) {
       throw new NotFoundException('Post not found');
     }
+    await this.assertPostVisibleToViewer(post, userId);
     if (post.visibility === 'private' && post.userId !== userId) {
       throw new NotFoundException('Post not found');
     }
     return post;
+  }
+
+  private applyActiveAuthorFilter<T extends ObjectLiteral>(
+    qb: SelectQueryBuilder<T>,
+    alias: string,
+    viewerRole?: string,
+  ): void {
+    if (viewerRole === 'admin') {
+      return;
+    }
+    qb.andWhere(`${alias}.status = :activeAuthorStatus`, {
+      activeAuthorStatus: 'active',
+    });
+  }
+
+  private isAuthorActiveForViewer(
+    post: Post & { user?: User },
+    viewerRole?: string,
+  ): boolean {
+    return (
+      viewerRole === 'admin' || !post.user || post.user.status === 'active'
+    );
+  }
+
+  private async assertPostVisibleToViewer(
+    post: Post & { user?: User },
+    userId?: string,
+    viewerRole?: string,
+  ): Promise<void> {
+    if (!this.isAuthorActiveForViewer(post, viewerRole)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (userId && post.userId !== userId) {
+      const hiddenUserIds = await this.getHiddenUserIds(userId);
+      if (hiddenUserIds.includes(post.userId)) {
+        throw new NotFoundException('Post not found');
+      }
+    }
   }
 
   private inferAttachmentType(url: string): 'image' | 'video' {

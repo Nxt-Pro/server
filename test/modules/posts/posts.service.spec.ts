@@ -143,6 +143,7 @@ function createQueryBuilderMock() {
   const qb = {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
     innerJoinAndSelect: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
