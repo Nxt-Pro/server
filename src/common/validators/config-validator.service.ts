@@ -231,7 +231,36 @@ export class ConfigValidatorService {
    * Validates AI scoring endpoint configuration
    */
   private async validateAi(): Promise<void> {
-    await this.runSchemaValidation(aiSchema, 'AI configuration');
+    const aiScoringEnabled = this.getBooleanConfig('AI_SCORING_ENABLED');
+    const useMockAi = this.getBooleanConfig('USE_MOCK_AI');
+    const requireServiceUrls =
+      this.isProductionLike() && aiScoringEnabled && !useMockAi;
+    const schema = (
+      requireServiceUrls
+        ? aiSchema.shape({
+            AI_SKILL_SERVICE_URL: yupUrl(
+              Yup.string().required(
+                'AI_SKILL_SERVICE_URL is required when AI scoring is enabled and USE_MOCK_AI=false in production-like runtime',
+              ),
+              'AI_SKILL_SERVICE_URL must be a valid URL',
+            ),
+            AI_MODERATION_SERVICE_URL: yupUrl(
+              Yup.string().required(
+                'AI_MODERATION_SERVICE_URL is required when AI scoring is enabled and USE_MOCK_AI=false in production-like runtime',
+              ),
+              'AI_MODERATION_SERVICE_URL must be a valid URL',
+            ),
+            AI_RECOMMENDATION_SERVICE_URL: yupUrl(
+              Yup.string().required(
+                'AI_RECOMMENDATION_SERVICE_URL is required when AI scoring is enabled and USE_MOCK_AI=false in production-like runtime',
+              ),
+              'AI_RECOMMENDATION_SERVICE_URL must be a valid URL',
+            ),
+          })
+        : aiSchema
+    ) as Yup.AnyObjectSchema;
+
+    await this.runSchemaValidation(schema, 'AI configuration');
   }
 
   /**
@@ -344,6 +373,21 @@ export class ConfigValidatorService {
       'REDIS_URL must be a valid redis:// or rediss:// URL and Upstash must use rediss:// or REDIS_TLS=true',
       value => this.isRedisUrlValid(value, config, isUpstashProvider),
     );
+    const aiScoringEnabled = this.getBooleanConfig(
+      'AI_SCORING_ENABLED',
+      config,
+    );
+    const useMockAi = this.getBooleanConfig('USE_MOCK_AI', config);
+    const requireAiServiceUrls = isProduction && aiScoringEnabled && !useMockAi;
+    const aiServiceUrl = (name: string) =>
+      yupUrl(
+        requireAiServiceUrls
+          ? Yup.string().required(
+              `${name} is required when AI scoring is enabled and USE_MOCK_AI=false in production-like runtime`,
+            )
+          : optionalString,
+        `${name} must be a valid URL`,
+      );
 
     return Yup.object({
       NODE_ENV: Yup.string()
@@ -632,17 +676,10 @@ export class ConfigValidatorService {
       AI_SCORING_QUEUE_ENABLED: Yup.string()
         .oneOf(['true', 'false'])
         .default('true'),
-      AI_SKILL_SERVICE_URL: yupUrl(
-        optionalString,
-        'AI_SKILL_SERVICE_URL must be a valid URL',
-      ),
-      AI_MODERATION_SERVICE_URL: yupUrl(
-        optionalString,
-        'AI_MODERATION_SERVICE_URL must be a valid URL',
-      ),
-      AI_RECOMMENDATION_SERVICE_URL: yupUrl(
-        optionalString,
-        'AI_RECOMMENDATION_SERVICE_URL must be a valid URL',
+      AI_SKILL_SERVICE_URL: aiServiceUrl('AI_SKILL_SERVICE_URL'),
+      AI_MODERATION_SERVICE_URL: aiServiceUrl('AI_MODERATION_SERVICE_URL'),
+      AI_RECOMMENDATION_SERVICE_URL: aiServiceUrl(
+        'AI_RECOMMENDATION_SERVICE_URL',
       ),
       AI_SERVICE_TIMEOUT_MS: Yup.number()
         .transform((_, originalValue) => {
@@ -725,7 +762,12 @@ export class ConfigValidatorService {
   private isProductionLike(
     config: Record<string, unknown> = this.config,
   ): boolean {
+    const strictFlag =
+      this.normalizeConfigValue(
+        config.STRICT_EXTERNAL_CONFIG_VALIDATION,
+      ).toLowerCase() === 'true';
     return (
+      strictFlag ||
       this.normalizeConfigValue(
         config.NODE_ENV,
         'development',
@@ -744,6 +786,13 @@ export class ConfigValidatorService {
       .toLowerCase() === 'upstash'
       ? 'upstash'
       : 'local';
+  }
+
+  private getBooleanConfig(
+    name: string,
+    config: Record<string, unknown> = this.config,
+  ): boolean {
+    return this.normalizeConfigValue(config[name]).toLowerCase() === 'true';
   }
 
   /**
@@ -789,7 +838,7 @@ export class ConfigValidatorService {
    */
   private sanitizeErrorMessage(message: string): string {
     return message.replace(
-      /(JWT_SECRET|DB_PASSWORD|DB_USERNAME|JWT_REFRESH_SECRET|REDIS_URL|REDIS_PASSWORD|MAIL_PASSWORD|FACEBOOK_APP_SECRET|SUPER_ADMIN_[12]_PASSWORD):\s*[^,]*/gi,
+      /(JWT_SECRET|DB_PASSWORD|DB_USERNAME|JWT_REFRESH_SECRET|REDIS_URL|REDIS_PASSWORD|MAIL_PASSWORD|AI_MODEL_API_KEY|FIREBASE_PRIVATE_KEY|FACEBOOK_APP_SECRET|SUPER_ADMIN_[12]_PASSWORD):\s*[^,]*/gi,
       '$1: [REDACTED]',
     );
   }

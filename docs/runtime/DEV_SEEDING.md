@@ -37,6 +37,9 @@ Reset:
 ALLOW_DEV_SEED=true npm run seed:dev:reset
 ```
 
+`seed:dev:reset` is local-only. It removes known dev-seed rows/media and then
+reseeds; it is not a production wipe command.
+
 Docker:
 
 ```sh
@@ -110,6 +113,10 @@ Root assets are required. If they are unavailable, the seed fails instead of fal
 ```bash
 docker compose --env-file .env.ai -f docker-compose.ai.yml up -d --build --force-recreate api
 ```
+
+Production-like environments should run migrations deliberately and should not
+run dev seed commands. Use `npm run migration:show`, take a database backup,
+then run `npm run migration:run` only after confirming the target environment.
 
 Seeded videos intentionally keep `video_thumbnail_url` empty until real thumbnail generation exists, matching normal upload behavior.
 

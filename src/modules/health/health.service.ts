@@ -1,17 +1,27 @@
 import * as os from 'os';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import { DatabaseService } from '@/database/database.service';
+import { createRedisConnectionOptions, type QueueConfig } from '@/config';
 
 @Injectable()
-export class HealthService {
+export class HealthService implements OnModuleDestroy {
+  private readonly logger = new Logger(HealthService.name);
   private readonly startTime = Date.now();
   private readonly configService: ConfigService;
   private readonly databaseService: DatabaseService;
+  private redis: Redis | null = null;
 
   constructor(configService: ConfigService, databaseService: DatabaseService) {
     this.configService = configService;
     this.databaseService = databaseService;
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.redis && this.redis.status !== 'end') {
+      await this.redis.quit().catch(() => undefined);
+    }
   }
 
   getBasicHealth() {
@@ -49,6 +59,29 @@ export class HealthService {
     };
   }
 
+  async getReadiness() {
+    const uptime = Date.now() - this.startTime;
+    const [database, redis] = await Promise.all([
+      this.checkDatabaseConnection(),
+      this.checkRedisConnection(),
+    ]);
+    const healthy =
+      database.status === 'connected' &&
+      (redis.status === 'connected' || redis.status === 'skipped');
+
+    return {
+      status: healthy ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      uptime,
+      uptimeFormatted: this.formatUptime(uptime),
+      environment: this.configService.get<string>('nodeEnv'),
+      dependencies: {
+        database,
+        redis,
+      },
+    };
+  }
+
   async checkDatabaseConnection() {
     const startTime = performance.now();
 
@@ -73,6 +106,57 @@ export class HealthService {
         responseTime: responseTime,
         message:
           error instanceof Error ? error.message : 'Unknown database error',
+      };
+    }
+  }
+
+  async checkRedisConnection() {
+    const startTime = performance.now();
+    const queuesDisabled =
+      this.configService.get<string>('nodeEnv') === 'test' ||
+      process.env.NXTPRO_DISABLE_QUEUES === 'true';
+
+    if (queuesDisabled) {
+      return {
+        status: 'skipped',
+        timestamp: new Date().toISOString(),
+        responseTime: 0,
+        message:
+          'Redis readiness skipped because queue infrastructure is disabled',
+      };
+    }
+
+    try {
+      const redis = this.getRedisClient();
+      if (redis.status === 'wait' || redis.status === 'close') {
+        await redis.connect();
+      }
+
+      const pong = await redis.ping();
+      const responseTime = performance.now() - startTime;
+
+      return {
+        status: pong === 'PONG' ? 'connected' : 'error',
+        timestamp: new Date().toISOString(),
+        responseTime,
+        message:
+          pong === 'PONG'
+            ? 'Redis connection is healthy'
+            : 'Redis ping returned an unexpected response',
+      };
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      const message =
+        error instanceof Error ? error.message : 'Unknown Redis error';
+      this.logger.warn(`Redis readiness check failed: ${message}`);
+      this.redis?.disconnect();
+      this.redis = null;
+
+      return {
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        responseTime,
+        message,
       };
     }
   }
@@ -159,5 +243,25 @@ export class HealthService {
     if (hours > 0) return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
     return `${seconds}s`;
+  }
+
+  private getRedisClient(): Redis {
+    if (this.redis && this.redis.status !== 'end') {
+      return this.redis;
+    }
+
+    const queueConfig = this.configService.getOrThrow<QueueConfig>('queue');
+    this.redis = new Redis(
+      createRedisConnectionOptions(queueConfig.redis, {
+        lazyConnect: true,
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1,
+        connectTimeout: 1000,
+        retryStrategy: () => null,
+      }),
+    );
+    this.redis.on('error', () => undefined);
+
+    return this.redis;
   }
 }

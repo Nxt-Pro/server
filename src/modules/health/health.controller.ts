@@ -1,4 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   HealthCheck,
   HealthCheckService,
@@ -33,6 +34,14 @@ export class HealthController {
   @Get('detailed')
   getDetailedHealth() {
     return this.healthService.getDetailedHealth();
+  }
+  @Get('ready')
+  async getReadiness(@Res({ passthrough: true }) response: Response) {
+    const readiness = await this.healthService.getReadiness();
+    if (readiness.status !== 'healthy') {
+      response.status(503);
+    }
+    return readiness;
   }
   @Get('database')
   @HealthCheck()
