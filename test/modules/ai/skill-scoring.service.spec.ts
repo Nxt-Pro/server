@@ -135,7 +135,7 @@ describe('SkillScoringService', () => {
       expect.objectContaining({
         supported: false,
         code: 'SKILL_NOT_SUPPORTED',
-        message: 'this skill is not supported yet',
+        message: 'This skill is not supported by AI scoring yet.',
       }),
     );
     expect(scoringJobs.create).not.toHaveBeenCalled();
@@ -156,13 +156,15 @@ describe('SkillScoringService', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: () =>
-          Promise.resolve({
-            average_speed_kmh: 24,
-            total_distance_covered: 91,
-            confidence: 0.9,
-            modelVersion: 'pace-v1',
-          }),
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              average_speed_kmh: 24,
+              total_distance_covered: 91,
+              confidence: 0.9,
+              modelVersion: 'pace-v1',
+            }),
+          ),
       }) as never;
 
     await expect(
@@ -217,7 +219,136 @@ describe('SkillScoringService', () => {
     });
   });
 
-  it('stores final failure and emits failure notification', async () => {
+  it('stores final failure metadata and emits friendly failure notification', async () => {
+    await expect(
+      service.markQueuedJobFailed(
+        {
+          scoringJobId: 'score-job-1',
+          playerId: 'player-1',
+          requestedBy: 'player-1',
+          skillKey: 'pace',
+          media: {},
+        },
+        new Error('connect ECONNREFUSED 127.0.0.1:8001'),
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        code: 'AI_SERVICE_UNAVAILABLE',
+        message:
+          'AI scoring is temporarily unavailable. Please try again later.',
+        retryable: true,
+      }),
+    );
+
+    expect(scoringJobs.markFailed).toHaveBeenCalledWith(
+      'score-job-1',
+      expect.objectContaining({
+        code: 'AI_SERVICE_UNAVAILABLE',
+        message:
+          'AI scoring is temporarily unavailable. Please try again later.',
+        retryable: true,
+      }),
+    );
+    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
+      userId: 'player-1',
+      title: 'Skill scoring failed',
+      message: 'AI scoring is temporarily unavailable. Please try again later.',
+      type: 'skill_score',
+      referenceId: 'score-job-1',
+    });
+  });
+
+  it('does not update profile scores when AI result shape is invalid', async () => {
+    playerProfiles.findByUserId.mockResolvedValue({
+      userId: 'player-1',
+      skillScores: { passing: 70 },
+    });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-length': '5' }),
+        blob: () => Promise.resolve(new Blob(['video'], { type: 'video/mp4' })),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () =>
+          Promise.resolve(JSON.stringify({ average_speed_kmh: null })),
+      }) as never;
+
+    await expect(
+      service.processQueuedJob(
+        {
+          scoringJobId: 'score-job-1',
+          playerId: 'player-1',
+          requestedBy: 'player-1',
+          skillKey: 'pace',
+          heightCm: 180,
+          media: {
+            pace: {
+              url: 'http://cdn.test/pace.mp4',
+              mimeType: 'video/mp4',
+              fileName: 'pace.mp4',
+              sizeBytes: 1024,
+            },
+          },
+        },
+        'bull-job-1',
+      ),
+    ).rejects.toThrow('scoreable speed data');
+
+    expect(playerProfiles.updateByUserId).not.toHaveBeenCalled();
+    expect(scoringJobs.markCompleted).not.toHaveBeenCalled();
+  });
+
+  it('maps AI service 422 responses to normalized final failures', async () => {
+    const errorBody = {
+      code: 'AI_REQUIRED_ACTION_NOT_DETECTED',
+      message: 'ignored raw service text',
+      retryable: true,
+      details: { skill: 'pace' },
+    };
+    playerProfiles.findByUserId.mockResolvedValue({
+      userId: 'player-1',
+      skillScores: {},
+    });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-length': '5' }),
+        blob: () => Promise.resolve(new Blob(['video'], { type: 'video/mp4' })),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        text: () => Promise.resolve(JSON.stringify(errorBody)),
+      }) as never;
+
+    let thrown: unknown;
+    try {
+      await service.processQueuedJob(
+        {
+          scoringJobId: 'score-job-1',
+          playerId: 'player-1',
+          requestedBy: 'player-1',
+          skillKey: 'pace',
+          heightCm: 180,
+          media: {
+            pace: {
+              url: 'http://cdn.test/pace.mp4',
+              mimeType: 'video/mp4',
+              fileName: 'pace.mp4',
+              sizeBytes: 1024,
+            },
+          },
+        },
+        'bull-job-1',
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
     await service.markQueuedJobFailed(
       {
         scoringJobId: 'score-job-1',
@@ -226,20 +357,17 @@ describe('SkillScoringService', () => {
         skillKey: 'pace',
         media: {},
       },
-      'AI service timed out',
+      thrown,
     );
 
     expect(scoringJobs.markFailed).toHaveBeenCalledWith(
       'score-job-1',
-      'AI service timed out',
+      expect.objectContaining({
+        code: 'AI_REQUIRED_ACTION_NOT_DETECTED',
+        message:
+          'We could not detect the required movement for this skill. Please check the tutorial and try again.',
+      }),
     );
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'player-1',
-      title: 'Skill scoring failed',
-      message: 'Pace scoring failed. Please retry with a clearer upload.',
-      type: 'skill_score',
-      referenceId: 'score-job-1',
-    });
   });
 
   it('rejects too-large scoring media before enqueueing', async () => {

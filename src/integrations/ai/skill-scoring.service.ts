@@ -12,6 +12,15 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import {
+  AiServiceError,
+  aiErrorResponseBody,
+  makeAiError,
+  normalizeAiError,
+  normalizeAiHttpError,
+  toAiServiceError,
+  type NormalizedAiError,
+} from './ai-error-normalizer';
 import { SubmitSkillScoringDto } from './dto';
 import {
   SkillSupportEntry,
@@ -86,7 +95,7 @@ export class SkillScoringService {
       return {
         supported: false,
         code: SKILL_NOT_SUPPORTED,
-        message: 'this skill is not supported yet',
+        message: 'This skill is not supported by AI scoring yet.',
         skill: dto.skill,
         supportedSkills: this.getSupportedSkills(),
       };
@@ -94,11 +103,23 @@ export class SkillScoringService {
 
     if (!this.aiConfig.scoringEnabled) {
       throw new ServiceUnavailableException(
-        'AI scoring is not enabled for this environment.',
+        aiErrorResponseBody(
+          makeAiError('AI_SERVICE_UNAVAILABLE', {
+            serviceName: 'ai-skills',
+            operation: 'scoring',
+          }),
+        ),
       );
     }
     if (!this.aiConfig.queueEnabled) {
-      throw new ServiceUnavailableException('AI scoring queue is disabled.');
+      throw new ServiceUnavailableException(
+        aiErrorResponseBody(
+          makeAiError('AI_SERVICE_UNAVAILABLE', {
+            serviceName: 'ai-skills',
+            operation: 'scoring',
+          }),
+        ),
+      );
     }
 
     const player = await this.playerProfiles.findByUserId(userId);
@@ -145,6 +166,9 @@ export class SkillScoringService {
       modelVersion: null,
       summary: null,
       failureReason: null,
+      failureCode: null,
+      failureDetails: null,
+      retryable: null,
       completedAt: null,
     });
 
@@ -192,13 +216,23 @@ export class SkillScoringService {
 
     await this.scoringJobs.markProcessing(payload.scoringJobId, queueJobId);
 
-    const raw = await this.callSkillService(
-      registryEntry,
-      payload.media,
-      payload.heightCm,
-    );
+    const raw = await this.callSkillService(registryEntry, payload.media, {
+      heightCm: payload.heightCm,
+      skillKey: payload.skillKey,
+    });
     const mapped = registryEntry.mapResult(raw);
     const score = Math.max(0, Math.min(99, Math.round(mapped.score)));
+    if (!Number.isFinite(score)) {
+      throw toAiServiceError(
+        'AI_RESULT_INVALID',
+        {
+          serviceName: registryEntry.serviceName,
+          skillKey: registryEntry.skillKey,
+          operation: 'scoring',
+        },
+        { developerMessage: 'AI score mapper produced a non-finite score' },
+      );
+    }
 
     await this.updatePlayerSkillScore(
       payload.playerId,
@@ -234,18 +268,33 @@ export class SkillScoringService {
 
   async markQueuedJobFailed(
     payload: SkillScoringJobPayload,
-    message: string,
-  ): Promise<void> {
-    await this.scoringJobs.markFailed(payload.scoringJobId, message);
-
+    error: unknown,
+  ): Promise<NormalizedAiError> {
     const registryEntry = findSupportedSkill(payload.skillKey);
+    const normalized = normalizeAiError(error, {
+      serviceName: registryEntry?.serviceName ?? 'ai-skills',
+      skillKey: registryEntry?.skillKey ?? payload.skillKey,
+      operation: 'scoring',
+    });
+
+    this.logger.warn(
+      `AI scoring job ${payload.scoringJobId} failed as ${normalized.code}: ${normalized.developerMessage ?? normalized.message}`,
+    );
+
+    await this.scoringJobs.markFailed(payload.scoringJobId, normalized);
+
     this.eventEmitter.emit('notification.create', {
       userId: payload.playerId,
       title: 'Skill scoring failed',
-      message: `${registryEntry?.displayName ?? payload.skillKey} scoring failed. Please retry with a clearer upload.`,
+      message: this.buildFailureNotificationMessage(
+        registryEntry?.displayName ?? payload.skillKey,
+        normalized,
+      ),
       type: 'skill_score',
       referenceId: payload.scoringJobId,
     });
+
+    return normalized;
   }
 
   private normalizeMediaInputs(
@@ -347,11 +396,19 @@ export class SkillScoringService {
   private async callSkillService(
     registryEntry: SkillSupportEntry,
     media: Record<string, SkillScoringMediaInput>,
-    heightCm?: number,
+    options: { heightCm?: number; skillKey: string },
   ): Promise<unknown> {
     const baseUrl = this.aiConfig.skillServiceUrl?.replace(/\/+$/, '');
     if (!baseUrl) {
-      throw new ServiceUnavailableException('AI skill service URL is not set');
+      throw toAiServiceError(
+        'AI_SERVICE_UNAVAILABLE',
+        {
+          serviceName: registryEntry.serviceName,
+          skillKey: options.skillKey,
+          operation: 'scoring',
+        },
+        { developerMessage: 'AI skill service URL is not set' },
+      );
     }
 
     const formData = new FormData();
@@ -362,28 +419,47 @@ export class SkillScoringService {
       formData.append(slot.formField, blob, fileName);
     }
 
-    if (registryEntry.skillKey === 'pace' && heightCm != null) {
-      formData.append('user_height_cm', String(heightCm));
+    if (registryEntry.skillKey === 'pace' && options.heightCm != null) {
+      formData.append('user_height_cm', String(options.heightCm));
     }
-    if (registryEntry.skillKey === 'physical' && heightCm != null) {
-      formData.append('height_cm', String(heightCm));
+    if (registryEntry.skillKey === 'physical' && options.heightCm != null) {
+      formData.append('height_cm', String(options.heightCm));
     }
 
     const url = `${baseUrl}${registryEntry.endpoint}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      headers: this.aiConfig.apiKey
-        ? { Authorization: `Bearer ${this.aiConfig.apiKey}` }
-        : undefined,
-      signal: AbortSignal.timeout(this.aiConfig.timeoutMs),
-    });
-
-    if (!response.ok) {
-      throw new Error(await this.readAiError(response));
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        headers: this.aiConfig.apiKey
+          ? { Authorization: `Bearer ${this.aiConfig.apiKey}` }
+          : undefined,
+        signal: AbortSignal.timeout(this.aiConfig.timeoutMs),
+      });
+    } catch (error) {
+      throw new AiServiceError(
+        normalizeAiError(error, {
+          serviceName: registryEntry.serviceName,
+          skillKey: registryEntry.skillKey,
+          operation: 'scoring',
+        }),
+      );
     }
 
-    return response.json() as Promise<unknown>;
+    const body = await this.readAiResponseBody(response);
+
+    if (!response.ok) {
+      throw new AiServiceError(
+        normalizeAiHttpError(response.status, body, {
+          serviceName: registryEntry.serviceName,
+          skillKey: registryEntry.skillKey,
+          operation: 'scoring',
+        }),
+      );
+    }
+
+    return body;
   }
 
   private async loadMediaBlob(
@@ -406,11 +482,27 @@ export class SkillScoringService {
       };
     }
 
-    const response = await fetch(media.url, {
-      signal: AbortSignal.timeout(this.aiConfig.timeoutMs),
-    });
+    let response: Response;
+    try {
+      response = await fetch(media.url, {
+        signal: AbortSignal.timeout(this.aiConfig.timeoutMs),
+      });
+    } catch (error) {
+      throw new AiServiceError(
+        normalizeAiError(error, {
+          operation: 'media',
+        }),
+      );
+    }
     if (!response.ok) {
-      throw new Error(`Unable to fetch scoring media: HTTP ${response.status}`);
+      throw toAiServiceError(
+        'AI_MEDIA_INVALID',
+        { operation: 'media' },
+        {
+          developerMessage: `Unable to fetch scoring media: HTTP ${response.status}`,
+          statusCode: response.status,
+        },
+      );
     }
     this.assertContentLengthWithinLimit(
       this.readContentLength(response.headers),
@@ -457,17 +549,21 @@ export class SkillScoringService {
     }
   }
 
-  private async readAiError(response: Response): Promise<string> {
+  private async readAiResponseBody(response: Response): Promise<unknown> {
+    const text = await response.text();
+    if (!text) return {};
     try {
-      const body = (await response.json()) as Record<string, unknown>;
-      const detail = body.detail ?? body.message ?? body.error;
-      if (typeof detail === 'string') {
-        return detail;
-      }
+      return JSON.parse(text) as unknown;
     } catch {
-      // Fall through to generic status message.
+      if (response.ok) {
+        throw toAiServiceError(
+          'AI_RESULT_INVALID',
+          { operation: 'scoring', serviceName: 'ai-skills' },
+          { developerMessage: 'AI service returned non-JSON success response' },
+        );
+      }
+      return { message: text };
     }
-    return `AI service request failed with HTTP ${response.status}`;
   }
 
   private async assertMediaWithinLimit(
@@ -498,7 +594,15 @@ export class SkillScoringService {
     try {
       stats = await fs.stat(filePath);
     } catch {
-      throw new BadRequestException(`Unable to verify ${slotKey} media size`);
+      throw new BadRequestException(
+        aiErrorResponseBody(
+          makeAiError('AI_MEDIA_INVALID', {
+            serviceName: 'ai-skills',
+            skillKey: slotKey,
+            operation: 'media',
+          }),
+        ),
+      );
     }
     this.assertSizeWithinLimit(stats.size, slotKey);
   }
@@ -507,13 +611,36 @@ export class SkillScoringService {
     url: string,
     slotKey: string,
   ): Promise<number> {
-    const response = await fetch(url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(this.aiConfig.timeoutMs),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(this.aiConfig.timeoutMs),
+      });
+    } catch {
+      throw new BadRequestException(
+        aiErrorResponseBody(
+          makeAiError('AI_MEDIA_INVALID', {
+            serviceName: 'ai-skills',
+            skillKey: slotKey,
+            operation: 'media',
+          }),
+        ),
+      );
+    }
     if (!response.ok) {
       throw new BadRequestException(
-        `Unable to verify ${slotKey} media size: HTTP ${response.status}`,
+        aiErrorResponseBody(
+          makeAiError(
+            'AI_MEDIA_INVALID',
+            {
+              serviceName: 'ai-skills',
+              skillKey: slotKey,
+              operation: 'media',
+            },
+            { statusCode: response.status },
+          ),
+        ),
       );
     }
     return this.assertContentLengthWithinLimit(
@@ -535,7 +662,13 @@ export class SkillScoringService {
   ): number {
     if (sizeBytes == null) {
       throw new BadRequestException(
-        `Unable to verify ${slotKey} media size before AI scoring`,
+        aiErrorResponseBody(
+          makeAiError('AI_MEDIA_INVALID', {
+            serviceName: 'ai-skills',
+            skillKey: slotKey,
+            operation: 'media',
+          }),
+        ),
       );
     }
     this.assertSizeWithinLimit(sizeBytes, slotKey);
@@ -546,7 +679,20 @@ export class SkillScoringService {
     const limit = this.aiConfig.maxScoringMediaBytes;
     if (sizeBytes > limit) {
       throw new BadRequestException(
-        `${slotKey} media is too large for AI scoring. Maximum size is ${this.formatBytes(limit)}.`,
+        aiErrorResponseBody(
+          makeAiError(
+            'AI_MEDIA_TOO_LARGE',
+            {
+              serviceName: 'ai-skills',
+              skillKey: slotKey,
+              operation: 'media',
+            },
+            {
+              details: { maxBytes: limit, actualBytes: sizeBytes },
+              developerMessage: `${slotKey} media is too large for AI scoring. Maximum size is ${this.formatBytes(limit)}.`,
+            },
+          ),
+        ),
       );
     }
   }
@@ -605,5 +751,18 @@ export class SkillScoringService {
         ) / 100,
       ),
     );
+  }
+
+  private buildFailureNotificationMessage(
+    displayName: string,
+    failure: NormalizedAiError,
+  ): string {
+    if (failure.code === 'AI_VIDEO_NOT_FOOTBALL') {
+      return failure.message;
+    }
+    if (failure.code === 'AI_SERVICE_UNAVAILABLE') {
+      return failure.message;
+    }
+    return `AI scoring could not analyze your ${displayName} video. ${failure.message}`;
   }
 }

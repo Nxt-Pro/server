@@ -17,9 +17,11 @@ import {
   Video,
 } from '@/database/entities';
 import { MediaModule } from '@/common/media';
+import { AiModule } from '@/integrations/ai/ai.module';
 
 @Module({
   imports: [
+    AiModule,
     MediaModule,
     TypeOrmModule.forFeature([
       Post,

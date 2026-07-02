@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { SkillScoringJobPayload } from '@/common/types';
+import type { NormalizedAiError } from '@/integrations/ai/ai-error-normalizer';
 import { SkillScoringService } from '@/integrations/ai/skill-scoring.service';
 
 @Injectable()
@@ -22,8 +23,8 @@ export class SkillScoringProcessor {
 
   async markFailed(
     payload: SkillScoringJobPayload,
-    message: string,
-  ): Promise<void> {
-    await this.skillScoringService.markQueuedJobFailed(payload, message);
+    error: unknown,
+  ): Promise<NormalizedAiError> {
+    return this.skillScoringService.markQueuedJobFailed(payload, error);
   }
 }

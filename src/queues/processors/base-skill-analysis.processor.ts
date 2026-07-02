@@ -12,6 +12,10 @@ import {
   PlayerProfileRepository,
   VideoSkillAnalysisRepository,
 } from '@/database/repositories';
+import {
+  AiServiceError,
+  normalizeAiError,
+} from '@/integrations/ai/ai-error-normalizer';
 import type { IAiModelService } from '@/integrations/ai/services';
 import { AI_MODEL_SERVICE } from '@/integrations/ai/services';
 import { ProgressTrackerService } from '@/queues/services';
@@ -52,63 +56,83 @@ export abstract class BaseSkillAnalysisProcessor<
     payload: SkillAnalysisJobPayload,
     jobId: string,
   ): Promise<SkillAnalysisResult> {
-    this.logger.log(
-      `Analyzing ${this.getAnalysisType()} skills for video ${payload.videoId}`,
-    );
+    try {
+      this.logger.log(
+        `Analyzing ${this.getAnalysisType()} skills for video ${payload.videoId}`,
+      );
 
-    const skills: Partial<TScores> = {};
-    const breakdown: Record<string, unknown> = {};
-    let currentStep = 2; // Start at 2 because consumer already did step 1
+      const skills: Partial<TScores> = {};
+      const breakdown: Record<string, unknown> = {};
+      let currentStep = 2; // Start at 2 because consumer already did step 1
 
-    const skillsToAnalyze = this.getSkillList();
+      const skillsToAnalyze = this.getSkillList();
 
-    for (const skill of skillsToAnalyze) {
-      await this.progressTracker.updateProgress(jobId, payload.requestedBy, {
-        currentStep: `Analyzing ${skill}...`,
-        currentStepIndex: currentStep,
+      for (const skill of skillsToAnalyze) {
+        await this.progressTracker.updateProgress(jobId, payload.requestedBy, {
+          currentStep: `Analyzing ${skill}...`,
+          currentStepIndex: currentStep,
+        });
+
+        const { score, details } = await this.analyzeSkill(
+          skill,
+          payload.videoUrl,
+          payload.playerId,
+        );
+
+        (skills as Record<string, number>)[skill] = score;
+        breakdown[skill] = details;
+
+        const confidence =
+          typeof details === 'object' &&
+          details !== null &&
+          'confidence' in details
+            ? (details as { confidence: number }).confidence
+            : 0;
+
+        this.logger.log(
+          `${skill} analysis complete: ${score}/99 (${confidence * 100}% confidence)`,
+        );
+
+        currentStep++;
+      }
+
+      const overall = this.calculateOverallScore(skills as TScores);
+      (skills as TScores).overall = overall;
+
+      const result: SkillAnalysisResult = {
+        videoId: payload.videoId,
+        playerId: payload.playerId,
+        analysisType: this.getAnalysisType(),
+        scores: skills as TScores,
+        confidence: this.calculateOverallConfidence(breakdown),
+        analysisVersion: this.ANALYSIS_VERSION,
+        processedAt: new Date(),
+        breakdown,
+      };
+
+      await this.saveAnalysisResult(result);
+      await this.updatePlayerAiScore(payload.playerId, overall);
+
+      return result;
+    } catch (error) {
+      const normalized = normalizeAiError(error, {
+        serviceName: 'ai-skills',
+        operation: 'scoring',
       });
 
-      const { score, details } = await this.analyzeSkill(
-        skill,
-        payload.videoUrl,
-        payload.playerId,
+      await this.analysisRepository.upsert(
+        {
+          videoId: payload.videoId,
+          status: 'failed',
+          aiScore: {},
+          processedAt: new Date(),
+          failureReason: normalized.message,
+        },
+        ['videoId'],
       );
 
-      (skills as Record<string, number>)[skill] = score;
-      breakdown[skill] = details;
-
-      const confidence =
-        typeof details === 'object' &&
-        details !== null &&
-        'confidence' in details
-          ? (details as { confidence: number }).confidence
-          : 0;
-
-      this.logger.log(
-        `${skill} analysis complete: ${score}/99 (${confidence * 100}% confidence)`,
-      );
-
-      currentStep++;
+      throw new AiServiceError(normalized);
     }
-
-    const overall = this.calculateOverallScore(skills as TScores);
-    (skills as TScores).overall = overall;
-
-    const result: SkillAnalysisResult = {
-      videoId: payload.videoId,
-      playerId: payload.playerId,
-      analysisType: this.getAnalysisType(),
-      scores: skills as TScores,
-      confidence: this.calculateOverallConfidence(breakdown),
-      analysisVersion: this.ANALYSIS_VERSION,
-      processedAt: new Date(),
-      breakdown,
-    };
-
-    await this.saveAnalysisResult(result);
-    await this.updatePlayerAiScore(payload.playerId, overall);
-
-    return result;
   }
 
   /**

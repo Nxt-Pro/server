@@ -146,7 +146,7 @@ export class VideoAnalysisService {
       state: status.state,
       progress: status.progress,
       result: status.returnvalue,
-      error: status.failedReason,
+      error: this.readProgressError(status.progress),
     };
   }
 
@@ -167,7 +167,7 @@ export class VideoAnalysisService {
       state: status.state,
       progress: status.progress,
       result: status.returnvalue,
-      error: status.failedReason,
+      error: this.readProgressError(status.progress),
     };
   }
 
@@ -176,6 +176,14 @@ export class VideoAnalysisService {
    */
   async getUserActiveJobs(userId: string): Promise<JobProgress[]> {
     return await this.skillAnalysisProducer.getUserActiveJobs(userId);
+  }
+
+  private readProgressError(progress: unknown): string | undefined {
+    if (!progress || typeof progress !== 'object') {
+      return undefined;
+    }
+    const error = (progress as { error?: unknown }).error;
+    return typeof error === 'string' ? error : undefined;
   }
 
   /**

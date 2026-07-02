@@ -35,6 +35,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exceptionResponse
         : ((exceptionResponse as HttpException)?.message ??
           'Internal server error');
+    const safeData = this.getSafeStructuredData(exceptionResponse);
 
     const isDevelopment = this.config.get<string>('nodeEnv') === 'development';
 
@@ -45,7 +46,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         status: 'fail',
         statusCode: status,
         message,
-        data: typeof exceptionResponse === 'object' ? exceptionResponse : null,
+        data:
+          safeData ??
+          (typeof exceptionResponse === 'object' ? exceptionResponse : null),
         timestamp,
         path: request.url,
       });
@@ -60,13 +63,37 @@ export class HttpExceptionFilter implements ExceptionFilter {
       status: 'error',
       statusCode: status,
       message,
-      data: isDevelopment
-        ? {
-            stack: exception.stack,
-          }
-        : null,
+      data:
+        safeData ??
+        (isDevelopment
+          ? {
+              stack: exception.stack,
+            }
+          : null),
       timestamp,
       path: request.url,
     });
+  }
+
+  private getSafeStructuredData(
+    value: unknown,
+  ): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    if (typeof record.code !== 'string') {
+      return null;
+    }
+    return {
+      code: record.code,
+      message: typeof record.message === 'string' ? record.message : undefined,
+      retryable:
+        typeof record.retryable === 'boolean' ? record.retryable : undefined,
+      details:
+        record.details && typeof record.details === 'object'
+          ? record.details
+          : undefined,
+    };
   }
 }

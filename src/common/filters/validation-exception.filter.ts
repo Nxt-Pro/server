@@ -45,8 +45,31 @@ export class ValidationExceptionFilter implements ExceptionFilter {
       status: 'fail',
       statusCode: status,
       message: exceptionResponse.message || 'Bad request',
+      data: this.getSafeStructuredData(exceptionResponse),
       timestamp,
       path: request.url,
     });
+  }
+
+  private getSafeStructuredData(
+    value: unknown,
+  ): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    if (typeof record.code !== 'string') {
+      return null;
+    }
+    return {
+      code: record.code,
+      message: typeof record.message === 'string' ? record.message : undefined,
+      retryable:
+        typeof record.retryable === 'boolean' ? record.retryable : undefined,
+      details:
+        record.details && typeof record.details === 'object'
+          ? record.details
+          : undefined,
+    };
   }
 }

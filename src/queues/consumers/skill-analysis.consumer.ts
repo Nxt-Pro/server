@@ -8,6 +8,7 @@ import {
   SkillAnalysisJobPayload,
   SkillScoringJobPayload,
 } from '@/common/types';
+import { normalizeAiError } from '@/integrations/ai/ai-error-normalizer';
 import {
   GoalkeeperProcessor,
   OutfieldPlayerProcessor,
@@ -105,19 +106,29 @@ export class SkillAnalysisConsumer extends BaseQueueConsumer {
       );
 
       const isFinalAttempt = this.isFinalAttempt(job);
+      const safeFailure = normalizeAiError(error, {
+        serviceName: 'ai-skills',
+        skillKey:
+          jobType === JobType.SKILL_SCORING
+            ? (job.data as SkillScoringJobPayload).skillKey
+            : undefined,
+        operation: 'scoring',
+      });
+      let progressFailureMessage = safeFailure.message;
 
       if (jobType === JobType.SKILL_SCORING && isFinalAttempt) {
-        await this.skillScoringProcessor.markFailed(
+        const normalized = await this.skillScoringProcessor.markFailed(
           job.data as SkillScoringJobPayload,
-          message,
+          error,
         );
+        progressFailureMessage = normalized.message;
       }
 
       if (isFinalAttempt || jobType !== JobType.SKILL_SCORING) {
         await this.progressTracker.markFailed(
           jobId,
           job.data.requestedBy,
-          message,
+          progressFailureMessage,
         );
       }
 

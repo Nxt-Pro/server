@@ -62,6 +62,9 @@ function createService(
     muteRepository?: Partial<Repository<Mute>>;
     mediaUrlService?: Partial<MediaUrlService>;
     eventEmitter?: { emit: jest.Mock };
+    aiRecommendationService?: {
+      getScoutRecommendations: jest.Mock;
+    };
   } = {},
 ) {
   const postRepository = {
@@ -100,6 +103,9 @@ function createService(
     ...overrides.mediaUrlService,
   };
   const eventEmitter = overrides.eventEmitter ?? { emit: jest.fn() };
+  const aiRecommendationService = overrides.aiRecommendationService ?? {
+    getScoutRecommendations: jest.fn(),
+  };
 
   const service = new PostsService(
     postRepository as unknown as Repository<Post>,
@@ -115,6 +121,7 @@ function createService(
     muteRepository as unknown as Repository<Mute>,
     mediaUrlService as unknown as MediaUrlService,
     eventEmitter as never,
+    aiRecommendationService as never,
   );
 
   return {
@@ -128,14 +135,20 @@ function createService(
     muteRepository,
     mediaUrlService,
     eventEmitter,
+    aiRecommendationService,
   };
 }
 
 function createQueryBuilderMock() {
   const qb = {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
     innerJoinAndSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    setParameters: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
@@ -363,6 +376,96 @@ describe('PostsService engagement notifications', () => {
       referenceId: post.id,
       preference: 'postEngagement',
     });
+  });
+});
+
+describe('PostsService personalized FYP', () => {
+  it('orders authenticated scout FYP posts by recommendation output', async () => {
+    const qb = createQueryBuilderMock();
+    const postRepository = createRepositoryMock();
+    postRepository.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    qb.getManyAndCount.mockResolvedValue([
+      [
+        createPost({ id: 'post_2', userId: 'player_2' }),
+        createPost({ id: 'post_1', userId: 'player_1' }),
+      ],
+      2,
+    ]);
+    const aiRecommendationService = {
+      getScoutRecommendations: jest.fn().mockResolvedValue({
+        scout_id: 'scout_1',
+        data_source: 'live_context',
+        metadata: {
+          personalized: true,
+          fallback: false,
+          live_context: true,
+          candidate_count: 2,
+          returned_count: 2,
+        },
+        recommendations: [
+          { player_id: 'player_2', score: 0.9 },
+          { player_id: 'player_1', score: 0.8 },
+        ],
+      }),
+    };
+    const { service } = createService({
+      postRepository,
+      aiRecommendationService,
+    });
+
+    const response = await service.getFypFeed(
+      { sub: 'scout_1', role: 'scout' },
+      1,
+      10,
+    );
+
+    expect(
+      aiRecommendationService.getScoutRecommendations,
+    ).toHaveBeenCalledWith('scout_1', 30);
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      'p.userId IN (:...recommendedUserIds)',
+      { recommendedUserIds: ['player_2', 'player_1'] },
+    );
+    expect(qb.setParameters).toHaveBeenCalledWith({
+      recommendedUserId0: 'player_2',
+      recommendedUserId1: 'player_1',
+    });
+    expect(qb.addSelect).toHaveBeenCalledWith(
+      expect.stringContaining('recommendedUserId0'),
+      'recommendation_rank',
+    );
+    expect(qb.orderBy).toHaveBeenCalledWith('recommendation_rank', 'ASC');
+    expect(response.data.map(post => post.userId)).toEqual([
+      'player_2',
+      'player_1',
+    ]);
+    expect(response.recommendation).toEqual(
+      expect.objectContaining({
+        personalized: true,
+        fallback: false,
+        live_context: true,
+      }),
+    );
+  });
+
+  it('keeps generic FYP for unauthenticated users', async () => {
+    const qb = createQueryBuilderMock();
+    const postRepository = createRepositoryMock();
+    postRepository.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    const aiRecommendationService = {
+      getScoutRecommendations: jest.fn(),
+    };
+    const { service } = createService({
+      postRepository,
+      aiRecommendationService,
+    });
+
+    await service.getFypFeed(undefined, 1, 10);
+
+    expect(
+      aiRecommendationService.getScoutRecommendations,
+    ).not.toHaveBeenCalled();
+    expect(qb.orderBy).toHaveBeenCalledWith('p.engagementScore', 'DESC');
   });
 });
 

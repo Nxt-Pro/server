@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import {
+  AiServiceError,
+  normalizeAiError,
+  normalizeAiHttpError,
+  toAiServiceError,
+} from '../ai-error-normalizer';
 import { IAiModelService, SkillAnalysisInput, SkillAnalysisOutput } from '.';
 
 import {
@@ -125,11 +131,27 @@ export class RealAiModelService implements IAiModelService {
   }
 
   private async fetchVideoBlob(videoUrl: string): Promise<Blob> {
-    const res = await fetch(videoUrl, {
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
+    let res: Response;
+    try {
+      res = await fetch(videoUrl, {
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (error) {
+      throw new AiServiceError(
+        normalizeAiError(error, {
+          operation: 'media',
+        }),
+      );
+    }
     if (!res.ok) {
-      throw new Error(`Failed to download video for AI: HTTP ${res.status}`);
+      throw toAiServiceError(
+        'AI_MEDIA_INVALID',
+        { operation: 'media' },
+        {
+          developerMessage: `Failed to download video for AI: HTTP ${res.status}`,
+          statusCode: res.status,
+        },
+      );
     }
     return res.blob();
   }
@@ -139,30 +161,40 @@ export class RealAiModelService implements IAiModelService {
     buildForm: () => FormData,
   ): Promise<unknown> {
     if (!this.skillBaseUrl || !this.apiKey) {
-      throw new Error(
-        'AI_SKILL_SERVICE_URL and AI_MODEL_API_KEY must be set when USE_MOCK_AI=false',
+      throw toAiServiceError(
+        'AI_SERVICE_UNAVAILABLE',
+        { serviceName: 'ai-skills', operation: 'scoring' },
+        {
+          developerMessage:
+            'AI_SKILL_SERVICE_URL and AI_MODEL_API_KEY must be set when USE_MOCK_AI=false',
+        },
       );
     }
     const url = `${this.skillBaseUrl}${path}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body: buildForm(),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        body: buildForm(),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (error) {
+      throw new AiServiceError(
+        normalizeAiError(error, {
+          serviceName: 'ai-skills',
+          operation: 'scoring',
+        }),
+      );
+    }
 
     if (!res.ok) {
-      let msg = `AI request failed (${res.status})`;
-      try {
-        const errBody = (await res.json()) as {
-          message?: string;
-          detail?: string;
-        };
-        msg = errBody.message ?? errBody.detail ?? msg;
-      } catch {
-        /* ignore */
-      }
-      throw new Error(msg);
+      throw new AiServiceError(
+        normalizeAiHttpError(res.status, await this.readAiResponseBody(res), {
+          serviceName: 'ai-skills',
+          operation: 'scoring',
+        }),
+      );
     }
 
     return res.json() as Promise<unknown>;
@@ -175,7 +207,11 @@ export class RealAiModelService implements IAiModelService {
     missingConfigMessage: string,
   ): Promise<unknown> {
     if (!baseUrl) {
-      throw new Error(missingConfigMessage);
+      throw toAiServiceError(
+        'AI_SERVICE_UNAVAILABLE',
+        { serviceName: 'ai-moderation', operation: 'moderation' },
+        { developerMessage: missingConfigMessage },
+      );
     }
 
     const url = `${baseUrl}${path}`;
@@ -186,32 +222,43 @@ export class RealAiModelService implements IAiModelService {
       headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (error) {
+      throw new AiServiceError(
+        normalizeAiError(error, {
+          serviceName: 'ai-moderation',
+          operation: 'moderation',
+        }),
+      );
+    }
 
     if (!res.ok) {
-      throw new Error(await this.readAiError(res));
+      throw new AiServiceError(
+        normalizeAiHttpError(res.status, await this.readAiResponseBody(res), {
+          serviceName: 'ai-moderation',
+          operation: 'moderation',
+        }),
+      );
     }
 
     return res.json() as Promise<unknown>;
   }
 
-  private async readAiError(res: Response): Promise<string> {
-    let msg = `AI request failed (${res.status})`;
+  private async readAiResponseBody(res: Response): Promise<unknown> {
+    const text = await res.text();
+    if (!text) return {};
     try {
-      const errBody = (await res.json()) as {
-        message?: string;
-        detail?: string;
-      };
-      msg = errBody.message ?? errBody.detail ?? msg;
+      return JSON.parse(text) as unknown;
     } catch {
-      /* ignore */
+      return { message: text };
     }
-    return msg;
   }
 
   private mapPace(data: PaceResponse): SkillAnalysisOutput {

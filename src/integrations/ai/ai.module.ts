@@ -13,14 +13,36 @@ import { SkillScoringService } from './skill-scoring.service';
 import { VideoAnalysisService } from './video-analysis.service';
 
 import { AiConfig } from '@/config';
-import { Block, Mute, PlayerProfile } from '@/database/entities';
+import {
+  Block,
+  Bookmark,
+  Chat,
+  Connection,
+  Like,
+  Mute,
+  PlayerProfile,
+  Post,
+  ScoutProfile,
+  User,
+} from '@/database/entities';
 import { RepositoriesModule } from '@/database/repositories.module';
 import { QueuesModule } from '@/queues/queues.module';
 
 @Module({
   imports: [
     RepositoriesModule,
-    TypeOrmModule.forFeature([Block, Mute, PlayerProfile]),
+    TypeOrmModule.forFeature([
+      Block,
+      Bookmark,
+      Chat,
+      Connection,
+      Like,
+      Mute,
+      PlayerProfile,
+      Post,
+      ScoutProfile,
+      User,
+    ]),
     forwardRef(() => QueuesModule),
     ConfigModule,
   ],
@@ -44,6 +66,11 @@ import { QueuesModule } from '@/queues/queues.module';
       inject: [ConfigService, MockAiModelService, RealAiModelService],
     },
   ],
-  exports: [VideoAnalysisService, SkillScoringService, AI_MODEL_SERVICE],
+  exports: [
+    VideoAnalysisService,
+    SkillScoringService,
+    AiRecommendationService,
+    AI_MODEL_SERVICE,
+  ],
 })
 export class AiModule {}

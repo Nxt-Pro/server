@@ -8,6 +8,7 @@ import {
   VideoModerationJobPayload,
   VideoUploadJobPayload,
 } from '@/common/types';
+import { normalizeAiError } from '@/integrations/ai/ai-error-normalizer';
 import { ModerationProcessor } from '@/queues/processors/moderation.processor';
 import { UploadProcessor } from '@/queues/processors/upload.processor';
 import { VideoUploadProducer } from '@/queues/producers/video-upload.producer';
@@ -71,6 +72,14 @@ export class VideoUploadConsumer extends BaseQueueConsumer {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      const failedJobType = job.name as JobType;
+      const safeMessage =
+        failedJobType === JobType.VIDEO_MODERATION
+          ? normalizeAiError(error, {
+              serviceName: 'ai-moderation',
+              operation: 'moderation',
+            }).message
+          : message;
 
       this.logger.error(
         `Job ${jobId} failed: ${message}`,
@@ -78,7 +87,7 @@ export class VideoUploadConsumer extends BaseQueueConsumer {
       );
 
       const userId = job.data.userId;
-      await this.progressTracker.markFailed(jobId, userId, message);
+      await this.progressTracker.markFailed(jobId, userId, safeMessage);
 
       throw error;
     }

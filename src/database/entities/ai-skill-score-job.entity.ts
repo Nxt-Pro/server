@@ -1,7 +1,9 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
+
 import { BaseEntity } from './base.entity';
 import { PlayerProfile } from './player-profile.entity';
 import { User } from './user.entity';
+import type { AiErrorCode } from '@/integrations/ai/ai-error-normalizer';
 
 export type AiSkillScoreJobStatus =
   | 'queued'
@@ -72,6 +74,15 @@ export class AiSkillScoreJob extends BaseEntity {
 
   @Column('text', { nullable: true, name: 'failure_reason' })
   failureReason: string | null;
+
+  @Column('varchar', { length: 50, nullable: true, name: 'failure_code' })
+  failureCode: AiErrorCode | null;
+
+  @Column('jsonb', { nullable: true, name: 'failure_details' })
+  failureDetails: Record<string, unknown> | null;
+
+  @Column('boolean', { nullable: true, name: 'retryable' })
+  retryable: boolean | null;
 
   @Column('timestamptz', { nullable: true, name: 'completed_at' })
   completedAt: Date | null;

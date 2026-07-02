@@ -5,6 +5,10 @@ import { In, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { BaseRepository } from './base.repository';
 
 import { AiSkillScoreJob, AiSkillScoreJobStatus } from '@/database/entities';
+import {
+  safeAiFailureDetails,
+  type NormalizedAiError,
+} from '@/integrations/ai/ai-error-normalizer';
 
 const ACTIVE_STATUSES: AiSkillScoreJobStatus[] = ['queued', 'processing'];
 
@@ -62,6 +66,9 @@ export class AiSkillScoreJobRepository extends BaseRepository<AiSkillScoreJob> {
         queueJobId,
         status: 'processing',
         failureReason: null,
+        failureCode: null,
+        failureDetails: null,
+        retryable: null,
       },
     );
   }
@@ -85,17 +92,30 @@ export class AiSkillScoreJobRepository extends BaseRepository<AiSkillScoreJob> {
       result: data.result as QueryDeepPartialEntity<Record<string, unknown>>,
       completedAt: new Date(),
       failureReason: null,
+      failureCode: null,
+      failureDetails: null,
+      retryable: null,
     };
 
     await this.repository.update({ id }, update);
   }
 
-  async markFailed(id: string, failureReason: string): Promise<void> {
+  async markFailed(id: string, failure: NormalizedAiError): Promise<void> {
     await this.repository.update(
       { id },
       {
         status: 'failed',
-        failureReason,
+        failureReason: failure.message,
+        failureCode: failure.code,
+        failureDetails: safeAiFailureDetails(failure) as QueryDeepPartialEntity<
+          Record<string, unknown>
+        >,
+        retryable: failure.retryable,
+        score: null,
+        confidence: null,
+        summary: null,
+        modelVersion: null,
+        result: null,
         completedAt: new Date(),
       },
     );

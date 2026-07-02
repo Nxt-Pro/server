@@ -5,6 +5,11 @@ import type { ModerationAnalysis } from '@/common/types';
 import { VideoModerationJobPayload } from '@/common/types';
 import { MediaModerationRepository } from '@/database/repositories';
 import type { IAiModelService } from '@/integrations/ai/services';
+import {
+  AiServiceError,
+  normalizeAiError,
+  safeAiFailureDetails,
+} from '@/integrations/ai/ai-error-normalizer';
 import { AI_MODEL_SERVICE } from '@/integrations/ai/services';
 import type { ProcessorJob } from '@/queues/types';
 
@@ -40,9 +45,30 @@ export class ModerationProcessor {
       ModerationStatus.PROCESSING,
     );
 
-    // Step 2: Check if video is football-related
-    await job.updateProgress(40);
-    const moderationResult = await this.aiModel.moderateVideo(payload.videoUrl);
+    let moderationResult: ModerationAnalysis;
+    try {
+      // Step 2: Check if video is football-related
+      await job.updateProgress(40);
+      moderationResult = await this.aiModel.moderateVideo(payload.videoUrl);
+    } catch (error) {
+      const normalized = normalizeAiError(error, {
+        serviceName: 'ai-moderation',
+        operation: 'moderation',
+      });
+      this.logger.warn(
+        `Moderation failed for attachment ${payload.attachmentId} as ${normalized.code}: ${normalized.developerMessage ?? normalized.message}`,
+      );
+      await this.moderationRepository.updateByAttachmentId(
+        payload.attachmentId,
+        {
+          status: ModerationStatus.FAILED,
+          failureReason: normalized.message,
+          result: safeAiFailureDetails(normalized) as never,
+          processedAt: new Date(),
+        },
+      );
+      throw new AiServiceError(normalized);
+    }
 
     // Step 3: Determine final result
     await job.updateProgress(90);

@@ -42,6 +42,8 @@ import {
   User,
   Video,
 } from '@/database/entities';
+import { AiRecommendationService } from '@/integrations/ai/ai-recommendation.service';
+import type { RecommendationMetadata } from '@/integrations/ai/ai-recommendation.service';
 
 @Injectable()
 export class PostsService {
@@ -82,6 +84,7 @@ export class PostsService {
     muteRepository: Repository<Mute>,
     private readonly mediaUrlService: MediaUrlService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly aiRecommendationService: AiRecommendationService,
   ) {
     this.postRepository = postRepository;
     this.attachmentRepository = attachmentRepository;
@@ -316,9 +319,28 @@ export class PostsService {
   }
 
   async getFypFeed(
+    user: { sub: string; role?: string } | undefined,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPostsDto> {
+    const userId = user?.sub;
+    if (user?.role === 'scout' && userId) {
+      const personalized = await this.getRecommendationBackedFypFeed(
+        userId,
+        page,
+        limit,
+      );
+      if (personalized) return personalized;
+    }
+
+    return this.getGenericFypFeed(userId, page, limit);
+  }
+
+  private async getGenericFypFeed(
     userId: string | undefined,
     page: number,
     limit: number,
+    recommendation?: RecommendationMetadata,
   ): Promise<PaginatedPostsDto> {
     const hiddenUserIds = userId ? await this.getHiddenUserIds(userId) : [];
 
@@ -349,6 +371,113 @@ export class PostsService {
       page,
       limit,
       totalPages: Math.ceil(total / limit) || 1,
+      ...(recommendation ? { recommendation } : {}),
+    };
+  }
+
+  private async getRecommendationBackedFypFeed(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedPostsDto | null> {
+    let recommendation: Awaited<
+      ReturnType<AiRecommendationService['getScoutRecommendations']>
+    >;
+    try {
+      const recommendationLimit = Math.min(
+        50,
+        Math.max(limit * Math.max(page, 1) * 3, limit),
+      );
+      recommendation =
+        await this.aiRecommendationService.getScoutRecommendations(
+          userId,
+          recommendationLimit,
+        );
+    } catch {
+      return this.getGenericFypFeed(userId, page, limit, {
+        personalized: false,
+        fallback: true,
+        reason: 'recommendation_unavailable',
+      });
+    }
+
+    const recommendedUserIds = recommendation.recommendations
+      .map(item => item.player_id)
+      .filter(Boolean);
+    if (recommendedUserIds.length === 0) {
+      return this.getGenericFypFeed(userId, page, limit, {
+        ...recommendation.metadata,
+        personalized: false,
+        fallback: true,
+        reason: recommendation.metadata.reason ?? 'no_recommendations',
+      });
+    }
+
+    const hiddenUserIds = await this.getHiddenUserIds(userId);
+    const visibleRecommendedUserIds = recommendedUserIds.filter(
+      playerId => !hiddenUserIds.includes(playerId),
+    );
+    if (visibleRecommendedUserIds.length === 0) {
+      return this.getGenericFypFeed(userId, page, limit, {
+        ...recommendation.metadata,
+        personalized: false,
+        fallback: true,
+        reason: 'recommendations_filtered',
+      });
+    }
+
+    const orderParams: Record<string, string> = {};
+    const orderCases = visibleRecommendedUserIds
+      .map((playerId, index) => {
+        const key = `recommendedUserId${index}`;
+        orderParams[key] = playerId;
+        return `WHEN p.userId = :${key} THEN ${index}`;
+      })
+      .join(' ');
+    const recommendationOrder = `CASE ${orderCases} ELSE ${visibleRecommendedUserIds.length} END`;
+
+    const qb = this.postRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.attachments', 'a')
+      .leftJoinAndSelect('a.video', 'v')
+      .leftJoinAndSelect('p.user', 'u')
+      .leftJoinAndSelect('u.playerProfile', 'upp')
+      .leftJoinAndSelect('u.scoutProfile', 'usp')
+      .where('p.visibility = :visibility', { visibility: 'public' })
+      .andWhere('p.userId IN (:...recommendedUserIds)', {
+        recommendedUserIds: visibleRecommendedUserIds,
+      })
+      .setParameters(orderParams)
+      .addSelect(recommendationOrder, 'recommendation_rank')
+      .orderBy('recommendation_rank', 'ASC')
+      .addOrderBy('p.engagementScore', 'DESC')
+      .addOrderBy('p.createdAt', 'DESC');
+
+    const [posts, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    if (posts.length === 0) {
+      return this.getGenericFypFeed(userId, page, limit, {
+        ...recommendation.metadata,
+        personalized: false,
+        fallback: true,
+        reason: 'no_recommended_posts',
+      });
+    }
+
+    return {
+      data: await this.toPostResponses(posts, userId),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      recommendation: {
+        ...recommendation.metadata,
+        personalized: true,
+        fallback: false,
+      },
     };
   }
 
@@ -891,18 +1020,19 @@ export class PostsService {
   private async getHiddenUserIds(userId: string): Promise<string[]> {
     const [blocks, mutes] = await Promise.all([
       this.blockRepository.find({
-        where: { blockerId: userId },
-        select: ['blockedId'],
+        where: [{ blockerId: userId }, { blockedId: userId }],
       }),
       this.muteRepository.find({
-        where: { muterId: userId },
-        select: ['mutedId'],
+        where: [{ muterId: userId }, { mutedId: userId }],
       }),
     ]);
-    const ids = new Set([
-      ...blocks.map(b => b.blockedId),
-      ...mutes.map(m => m.mutedId),
-    ]);
+    const ids = new Set<string>();
+    for (const block of blocks) {
+      ids.add(block.blockerId === userId ? block.blockedId : block.blockerId);
+    }
+    for (const mute of mutes) {
+      ids.add(mute.muterId === userId ? mute.mutedId : mute.muterId);
+    }
     return [...ids];
   }
 
