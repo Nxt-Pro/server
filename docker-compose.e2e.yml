@@ -1,0 +1,36 @@
+services:
+  postgres-e2e:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-nxtpro_e2e}
+      POSTGRES_USER: ${DB_USERNAME:-nxtpro_e2e}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nxtpro_e2e_password}
+    ports:
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - postgres_e2e_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis-e2e:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-nxtpro_e2e_redis_password}
+    command: >
+      sh -c 'redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"'
+    ports:
+      - "${REDIS_PORT:-6381}:6379"
+    volumes:
+      - redis_e2e_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_e2e_data:
+  redis_e2e_data:

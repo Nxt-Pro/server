@@ -45,6 +45,7 @@ coverage/
 .env.*
 !.env.example
 !.env.docker.example
+!.env.e2e.example
 
 # temp
 .temp/

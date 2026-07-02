@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import { SnakeNamingStrategy } from '@/database';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export const AppDataSource = new DataSource({
   type: 'postgres',

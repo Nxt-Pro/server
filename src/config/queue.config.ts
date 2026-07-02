@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 
 import { RedisConfig, redisConfig } from './redis.config';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface QueueConfig {
   redis: RedisConfig;

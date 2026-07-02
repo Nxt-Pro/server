@@ -65,6 +65,8 @@ export function setupServer(
     }),
   );
 
-  // Graceful shutdown
-  app.enableShutdownHooks();
+  // Graceful shutdown. Jest e2e runs should not install process signal hooks.
+  if (configService.get<string>('nodeEnv') !== 'test') {
+    app.enableShutdownHooks();
+  }
 }

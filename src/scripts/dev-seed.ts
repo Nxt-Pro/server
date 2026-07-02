@@ -12,6 +12,7 @@ import {
   AiSkillScoreJob,
   Attachment,
   AuditLog,
+  Block,
   Bookmark,
   CareerTimeline,
   Chat,
@@ -24,6 +25,7 @@ import {
   Like,
   MediaModeration,
   Message,
+  Mute,
   Notification,
   PlayerConnection,
   PlayerProfile,
@@ -108,6 +110,10 @@ interface SeedContext {
   chats: Chat[];
   events: Event[];
   venues: Venue[];
+  recommendationExclusions: {
+    blocked: Array<{ scoutKey: string; playerKey: string }>;
+    muted: Array<{ scoutKey: string; playerKey: string }>;
+  };
   media: SeedMedia;
   counts: Record<string, number>;
 }
@@ -1563,6 +1569,41 @@ async function seedConnectionsAndChats(
   ctx.counts.messages = pairs.length * 3;
 }
 
+async function seedRecommendationExclusions(
+  queryRunner: QueryRunner,
+  ctx: SeedContext,
+) {
+  const manager = queryRunner.manager;
+  const blocked = [{ scoutKey: 'maya_cole', playerKey: 'leo_fischer' }];
+  const muted = [{ scoutKey: 'maya_cole', playerKey: 'noah_reed' }];
+
+  for (const relation of blocked) {
+    await manager.getRepository(Block).save(
+      manager.getRepository(Block).create({
+        blockerId: ctx.scouts[relation.scoutKey].userId,
+        blockedId: ctx.players[relation.playerKey].userId,
+        blocker: ctx.users[relation.scoutKey],
+        blocked: ctx.users[relation.playerKey],
+      }),
+    );
+  }
+
+  for (const relation of muted) {
+    await manager.getRepository(Mute).save(
+      manager.getRepository(Mute).create({
+        muterId: ctx.scouts[relation.scoutKey].userId,
+        mutedId: ctx.players[relation.playerKey].userId,
+        muter: ctx.users[relation.scoutKey],
+        muted: ctx.users[relation.playerKey],
+      }),
+    );
+  }
+
+  ctx.recommendationExclusions = { blocked, muted };
+  ctx.counts.blocks = blocked.length;
+  ctx.counts.mutes = muted.length;
+}
+
 async function seedEvents(queryRunner: QueryRunner, ctx: SeedContext) {
   const manager = queryRunner.manager;
   const venueSeeds = [
@@ -1981,6 +2022,10 @@ async function seedAll(queryRunner: QueryRunner): Promise<SeedContext> {
     chats: [],
     events: [],
     venues: [],
+    recommendationExclusions: {
+      blocked: [],
+      muted: [],
+    },
     media,
     counts: {
       users: allAccounts.length,
@@ -1994,6 +2039,7 @@ async function seedAll(queryRunner: QueryRunner): Promise<SeedContext> {
   await seedPosts(queryRunner, ctx);
   await seedEngagement(queryRunner, ctx);
   await seedConnectionsAndChats(queryRunner, ctx);
+  await seedRecommendationExclusions(queryRunner, ctx);
   await seedEvents(queryRunner, ctx);
   await seedNotificationsReportsAndAi(queryRunner, ctx);
 
@@ -2028,6 +2074,8 @@ async function writeSeedOutput(ctx: SeedContext) {
         smokeTestIds: {
           featuredPlayerId: ctx.players.tarek_hassan.userId,
           scoutId: ctx.scouts.maya_cole.userId,
+          blockedPlayerId: ctx.players.leo_fischer.userId,
+          mutedPlayerId: ctx.players.noah_reed.userId,
           publicPostId: ctx.posts[0].id,
           videoPostId: ctx.posts.find(post => post.isHighlight)?.id,
           activeChatId: ctx.chats[0].id,
@@ -2042,6 +2090,20 @@ async function writeSeedOutput(ctx: SeedContext) {
           note: 'Uses only monorepo root assets/pics and assets/videos, copied into the normal uploads folders. If root assets are unavailable, seeding fails instead of falling back to generated or bundled media.',
         },
         aiScoringSkillGaps: buildPlayerSkillGapSummary(),
+        recommendationExclusions: {
+          blocked: ctx.recommendationExclusions.blocked.map(relation => ({
+            scout: relation.scoutKey,
+            scoutId: ctx.scouts[relation.scoutKey].userId,
+            player: relation.playerKey,
+            playerId: ctx.players[relation.playerKey].userId,
+          })),
+          muted: ctx.recommendationExclusions.muted.map(relation => ({
+            scout: relation.scoutKey,
+            scoutId: ctx.scouts[relation.scoutKey].userId,
+            player: relation.playerKey,
+            playerId: ctx.players[relation.playerKey].userId,
+          })),
+        },
         counts: ctx.counts,
       },
       null,

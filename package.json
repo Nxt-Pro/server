@@ -20,7 +20,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "node scripts/run-e2e.js",
+    "test:e2e:docker": "npm run db:e2e:up && node scripts/run-e2e.js",
+    "db:e2e:up": "node scripts/e2e-compose.js up -d",
+    "db:e2e:down": "node scripts/e2e-compose.js down",
     "docker:config": "docker compose --env-file .env.docker config",
     "docker:build": "docker compose --env-file .env.docker build",
     "docker:up": "docker compose --env-file .env.docker up -d",
@@ -36,7 +39,10 @@
     "seed:run": "ts-node -r tsconfig-paths/register ./src/database/seeders/index.ts",
     "seed:dev": "node dist/src/scripts/dev-seed.js seed",
     "seed:dev:undo": "node dist/src/scripts/dev-seed.js undo",
-    "seed:dev:reset": "node dist/src/scripts/dev-seed.js reset"
+    "seed:dev:reset": "node dist/src/scripts/dev-seed.js reset",
+    "seed:dev:ts": "ts-node -r tsconfig-paths/register ./src/scripts/dev-seed.ts seed",
+    "seed:dev:ts:undo": "ts-node -r tsconfig-paths/register ./src/scripts/dev-seed.ts undo",
+    "seed:dev:ts:reset": "ts-node -r tsconfig-paths/register ./src/scripts/dev-seed.ts reset"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

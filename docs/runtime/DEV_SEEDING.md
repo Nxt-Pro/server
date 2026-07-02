@@ -134,6 +134,9 @@ The dataset includes:
 - moderation reports and audit logs
 - media moderation and video skill analysis examples
 - AI skill score job examples
+- recommendation exclusion fixtures:
+  - scout `maya.cole@dev.nxtpro.local` blocks player `leo.fischer@dev.nxtpro.local`
+  - scout `maya.cole@dev.nxtpro.local` mutes player `noah.reed@dev.nxtpro.local`
 
 ## AI Scoring Gaps
 

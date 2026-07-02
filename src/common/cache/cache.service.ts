@@ -11,21 +11,27 @@ type CacheMiss = { hit: false };
 export class CacheService implements OnModuleDestroy {
   private readonly logger = new Logger(CacheService.name);
   private readonly cacheConfig: CacheConfig;
-  private readonly redis: Redis;
+  private readonly redis: Redis | null;
   private unavailableUntil = 0;
 
   constructor(private readonly configService: ConfigService) {
     this.cacheConfig = this.configService.getOrThrow<CacheConfig>('cache');
-    this.redis = new Redis(
-      createRedisConnectionOptions(this.cacheConfig.redis, {
-        lazyConnect: true,
-        enableOfflineQueue: false,
-        maxRetriesPerRequest: 1,
-        connectTimeout: 1000,
-      }),
-    );
+    const cacheDisabled =
+      this.configService.get<string>('nodeEnv') === 'test' ||
+      process.env.NXTPRO_DISABLE_CACHE === 'true';
 
-    this.redis.on('error', error => {
+    this.redis = cacheDisabled
+      ? null
+      : new Redis(
+          createRedisConnectionOptions(this.cacheConfig.redis, {
+            lazyConnect: true,
+            enableOfflineQueue: false,
+            maxRetriesPerRequest: 1,
+            connectTimeout: 1000,
+          }),
+        );
+
+    this.redis?.on('error', error => {
       this.logger.warn(`Cache Redis error: ${error.message}`);
     });
   }
@@ -74,7 +80,7 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.redis.status !== 'end') {
+    if (this.redis && this.redis.status !== 'end') {
       await this.redis.quit().catch(() => undefined);
     }
   }
@@ -116,6 +122,10 @@ export class CacheService implements OnModuleDestroy {
   }
 
   private async getRedisClient(): Promise<Redis | null> {
+    if (!this.redis) {
+      return null;
+    }
+
     if (Date.now() < this.unavailableUntil) {
       return null;
     }

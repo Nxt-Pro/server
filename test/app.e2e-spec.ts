@@ -7,9 +7,9 @@ import { AppModule } from './../src/app.module';
 import { setupServer } from './../src/server';
 
 describe('AppController (e2e)', () => {
-  let app: INestApplication;
+  let app: INestApplication | undefined;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -22,11 +22,14 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  afterEach(async () => {
-    await app.close();
+  afterAll(async () => {
+    await app?.close();
+    app = undefined;
   });
 
   it('/api (GET) should return welcome message', async () => {
+    expect(app).toBeDefined();
+    if (!app) return;
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     await request(httpServer)
       .get('/api')
