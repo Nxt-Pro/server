@@ -75,12 +75,19 @@ export class FirebaseService implements OnApplicationBootstrap {
     }
   }
 
+  private isInvalidTokenError(code?: string): boolean {
+    return (
+      code === 'messaging/invalid-registration-token' ||
+      code === 'messaging/registration-token-not-registered'
+    );
+  }
+
   async sendMulticastNotification(
     tokens: string[],
     title: string,
     body: string,
     data?: Record<string, string>,
-  ) {
+  ): Promise<{ invalidTokens: string[] } | undefined> {
     try {
       if (admin.apps.length === 0) {
         this.logger.warn(
@@ -101,16 +108,23 @@ export class FirebaseService implements OnApplicationBootstrap {
 
       if (response.failureCount > 0) {
         const failedTokens: string[] = [];
+        const invalidTokens: string[] = [];
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
             failedTokens.push(tokens[idx]);
+            if (this.isInvalidTokenError(resp.error?.code)) {
+              invalidTokens.push(tokens[idx]);
+            }
           }
         });
         this.logger.log(`Failed to send to ${response.failureCount} tokens`);
-        // Here you might want to handle invalid tokens (remove them from DB)
+        return { invalidTokens };
       }
+
+      return { invalidTokens: [] };
     } catch (error) {
       this.logger.error('Error sending multicast notification', error);
+      return undefined;
     }
   }
 }

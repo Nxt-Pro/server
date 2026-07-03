@@ -35,11 +35,6 @@ describe('ConnectionsService notifications', () => {
   let scoutProfileRepository: { findOne: jest.Mock };
   let userRepository: { findOne: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
-  let mailService: {
-    sendConnectionRequestEmail: jest.Mock;
-    sendConnectionAcceptedEmail: jest.Mock;
-  };
-  let notificationPreferencesService: { allowsEmailNotification: jest.Mock };
   let service: ConnectionsService;
 
   const player = {
@@ -82,13 +77,6 @@ describe('ConnectionsService notifications', () => {
       }),
     };
     eventEmitter = { emit: jest.fn() };
-    mailService = {
-      sendConnectionRequestEmail: jest.fn().mockResolvedValue(undefined),
-      sendConnectionAcceptedEmail: jest.fn().mockResolvedValue(undefined),
-    };
-    notificationPreferencesService = {
-      allowsEmailNotification: jest.fn().mockResolvedValue(true),
-    };
 
     service = new ConnectionsService(
       connectionRepository as unknown as Repository<Connection>,
@@ -97,33 +85,38 @@ describe('ConnectionsService notifications', () => {
       scoutProfileRepository as unknown as Repository<ScoutProfile>,
       userRepository as unknown as Repository<User>,
       eventEmitter as never,
-      mailService as never,
-      notificationPreferencesService as never,
     );
   });
 
-  it('notifies and emails the recipient for connection requests', async () => {
+  it('emits central delivery intent for connection requests', async () => {
     playerProfileRepository.findOne.mockResolvedValue({ userId: player.id });
     scoutProfileRepository.findOne.mockResolvedValue({ userId: scout.id });
     connectionRepository.findOne.mockResolvedValue(null);
 
     await service.connectPlayerToScout(player.id, scout.id);
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: scout.id,
-      title: 'New connection request',
-      message: 'Player One sent you a connection request.',
-      type: 'connection_request',
-      referenceId: player.id,
-      preference: 'connections',
-    });
-    expect(mailService.sendConnectionRequestEmail).toHaveBeenCalledWith(
-      scout.email,
-      'Player One',
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: scout.id,
+        actorId: player.id,
+        title: 'New connection request',
+        message: 'Player One sent you a connection request.',
+        type: 'connection_request',
+        referenceId: player.id,
+        referenceType: 'profile',
+        preference: 'connections',
+        dedupeKey: 'connection_request:connection_1',
+        email: {
+          to: scout.email,
+          subject: 'New connection request on NxtPro',
+          message: 'Player One sent you a connection request on NxtPro.',
+        },
+      }),
     );
   });
 
-  it('notifies and emails the requester when a connection is accepted', async () => {
+  it('emits central delivery intent when a connection is accepted', async () => {
     const connection = dated({
       id: 'connection_1',
       playerId: player.id,
@@ -139,35 +132,25 @@ describe('ConnectionsService notifications', () => {
       status: 'accepted',
     });
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: player.id,
-      title: 'Connection accepted',
-      message: 'Scout One accepted your connection request.',
-      type: 'connection_request',
-      referenceId: scout.id,
-      preference: 'connections',
-    });
-    expect(mailService.sendConnectionAcceptedEmail).toHaveBeenCalledWith(
-      player.email,
-      'Scout One',
-    );
-  });
-
-  it('does not email connection updates when connection emails are disabled', async () => {
-    notificationPreferencesService.allowsEmailNotification.mockResolvedValue(
-      false,
-    );
-    playerProfileRepository.findOne.mockResolvedValue({ userId: player.id });
-    scoutProfileRepository.findOne.mockResolvedValue({ userId: scout.id });
-    connectionRepository.findOne.mockResolvedValue(null);
-
-    await service.connectPlayerToScout(player.id, scout.id);
-
     expect(eventEmitter.emit).toHaveBeenCalledWith(
       'notification.create',
-      expect.objectContaining({ preference: 'connections' }),
+      expect.objectContaining({
+        userId: player.id,
+        actorId: scout.id,
+        title: 'Connection accepted',
+        message: 'Scout One accepted your connection request.',
+        type: 'connection_accepted',
+        referenceId: scout.id,
+        referenceType: 'profile',
+        preference: 'connections',
+        dedupeKey: 'connection_accepted:connection_1',
+        email: {
+          to: player.email,
+          subject: 'Your NxtPro connection request was accepted',
+          message: 'Scout One accepted your connection request on NxtPro.',
+        },
+      }),
     );
-    expect(mailService.sendConnectionRequestEmail).not.toHaveBeenCalled();
   });
 
   it('does not notify self connection attempts', async () => {
@@ -180,6 +163,5 @@ describe('ConnectionsService notifications', () => {
     ).rejects.toThrow(ConflictException);
 
     expect(eventEmitter.emit).not.toHaveBeenCalled();
-    expect(mailService.sendConnectionRequestEmail).not.toHaveBeenCalled();
   });
 });

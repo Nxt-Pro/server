@@ -8,8 +8,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ScoutVerificationStatus } from '@/common/enums';
 import { PlayerProfile, ScoutProfile } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 import {
   AuditLogRepository,
   PlayerProfileRepository,
@@ -55,8 +53,6 @@ export class AdminVerificationService {
     auditLogRepository: AuditLogRepository,
     userRepository: UserRepository,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.playerProfileRepository = playerProfileRepository;
     this.scoutProfileRepository = scoutProfileRepository;
@@ -149,7 +145,7 @@ export class AdminVerificationService {
     });
 
     this.logger.log(`Player ${userId} verified by admin ${adminId}`);
-    await this.notifyVerificationStatus(userId, 'verified', notes);
+    await this.notifyVerificationStatus(userId, adminId, 'verified', notes);
 
     return (await this.playerProfileRepository.findByUserId(userId))!;
   }
@@ -194,13 +190,19 @@ export class AdminVerificationService {
     });
 
     this.logger.log(`Scout ${userId} ${data.status} by admin ${adminId}`);
-    await this.notifyVerificationStatus(userId, data.status, data.notes);
+    await this.notifyVerificationStatus(
+      userId,
+      adminId,
+      data.status,
+      data.notes,
+    );
 
     return (await this.scoutProfileRepository.findByUserId(userId))!;
   }
 
   private async notifyVerificationStatus(
     userId: string,
+    adminId: string,
     status: 'verified' | 'rejected',
     reason?: string,
   ): Promise<void> {
@@ -214,39 +216,27 @@ export class AdminVerificationService {
 
     this.eventEmitter.emit('notification.create', {
       userId,
+      actorId: adminId,
       title,
       message,
-      type: 'verification',
+      type: 'verification_status',
       referenceId: userId,
+      referenceType: 'profile',
       preference: 'verificationUpdates',
+      dedupeKey: `verification_status:${userId}:${status}`,
+      data: {
+        status,
+      },
+      email: user?.email
+        ? {
+            to: user.email,
+            subject:
+              status === 'verified'
+                ? 'Your NxtPro profile was verified'
+                : 'Your NxtPro verification was rejected',
+            message,
+          }
+        : undefined,
     });
-
-    if (
-      user?.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        userId,
-        'verificationUpdates',
-      ))
-    ) {
-      this.sendBestEffortVerificationEmail(user.email, status, reason);
-    }
-  }
-
-  private sendBestEffortVerificationEmail(
-    email: string,
-    status: 'verified' | 'rejected',
-    reason?: string,
-  ): void {
-    void this.mailService
-      .sendVerificationStatusEmail(email, status, reason)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send verification email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

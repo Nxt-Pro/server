@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
 import {
@@ -9,9 +8,7 @@ import {
   Report,
   User,
 } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
 import { ChatService } from '@/modules/chats/chat.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 import { HttpError } from '@/common/utils';
 
 const createUpdateQueryBuilder = () => {
@@ -53,20 +50,11 @@ describe('ChatService notifications', () => {
   };
   let userRepository: { findOne: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
-  let mailService: {
-    sendChatRequestEmail: jest.Mock;
-    sendChatAcceptedEmail: jest.Mock;
-    sendChatRejectedEmail: jest.Mock;
-  };
   let reportRepository: { create: jest.Mock; save: jest.Mock };
   let blockRepository: {
     create: jest.Mock;
     save: jest.Mock;
     findOne: jest.Mock;
-  };
-  let notificationPreferencesService: {
-    allowsInAppNotification: jest.Mock;
-    allowsEmailNotification: jest.Mock;
   };
   let service: ChatService;
 
@@ -84,8 +72,6 @@ describe('ChatService notifications', () => {
   } as User;
 
   beforeEach(() => {
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-
     chatRepository = {
       create: jest.fn().mockReturnValue({}),
       save: jest.fn().mockResolvedValue({ id: 'chat_1' }),
@@ -119,11 +105,6 @@ describe('ChatService notifications', () => {
       }),
     };
     eventEmitter = { emit: jest.fn() };
-    mailService = {
-      sendChatRequestEmail: jest.fn().mockResolvedValue(undefined),
-      sendChatAcceptedEmail: jest.fn().mockResolvedValue(undefined),
-      sendChatRejectedEmail: jest.fn().mockResolvedValue(undefined),
-    };
     reportRepository = {
       create: jest.fn().mockReturnValue({ id: 'report_1' }),
       save: jest.fn().mockResolvedValue({ id: 'report_1' }),
@@ -133,11 +114,6 @@ describe('ChatService notifications', () => {
       save: jest.fn().mockResolvedValue({ id: 'block_1' }),
       findOne: jest.fn().mockResolvedValue(null),
     };
-    notificationPreferencesService = {
-      allowsInAppNotification: jest.fn().mockResolvedValue(true),
-      allowsEmailNotification: jest.fn().mockResolvedValue(true),
-    };
-
     service = new ChatService(
       chatRepository as unknown as Repository<Chat>,
       participantRepository as unknown as Repository<ChatParticipant>,
@@ -146,8 +122,6 @@ describe('ChatService notifications', () => {
       reportRepository as unknown as Repository<Report>,
       blockRepository as unknown as Repository<Block>,
       eventEmitter as unknown as EventEmitter2,
-      mailService as unknown as MailService,
-      notificationPreferencesService as unknown as NotificationPreferencesService,
     );
   });
 
@@ -155,7 +129,7 @@ describe('ChatService notifications', () => {
     jest.restoreAllMocks();
   });
 
-  it('creates a scout notification and best-effort email for player chat requests', async () => {
+  it('creates a central delivery payload for player chat requests', async () => {
     const createdChat = {
       id: 'chat_1',
       status: 'pending',
@@ -172,22 +146,28 @@ describe('ChatService notifications', () => {
       initialMessage: 'Can we talk?',
     });
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: scout.id,
-      title: 'New chat request',
-      message: 'Player One: Can we talk?',
-      type: 'message',
-      referenceId: createdChat.id,
-      preference: 'chatRequests',
-    });
-    expect(mailService.sendChatRequestEmail).toHaveBeenCalledWith(
-      scout.email,
-      'Player One',
-      'Can we talk?',
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: scout.id,
+        actorId: player.id,
+        title: 'New chat request',
+        message: 'Player One: Can we talk?',
+        type: 'chat_request',
+        referenceId: createdChat.id,
+        referenceType: 'chat',
+        preference: 'chatRequests',
+        dedupeKey: `chat_request:${createdChat.id}`,
+        email: {
+          to: scout.email,
+          subject: 'New chat request on NxtPro',
+          message: 'Player One: Can we talk?',
+        },
+      }),
     );
   });
 
-  it('notifies the player and sends best-effort email when a scout accepts', async () => {
+  it('notifies the player through central delivery when a scout accepts', async () => {
     const chat = {
       id: 'chat_1',
       status: 'pending',
@@ -202,17 +182,24 @@ describe('ChatService notifications', () => {
 
     await service.acceptChat(chat.id, scout.id);
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: player.id,
-      title: 'Chat request accepted',
-      message: 'Scout One accepted your chat request.',
-      type: 'message',
-      referenceId: chat.id,
-      preference: 'chatAccepted',
-    });
-    expect(mailService.sendChatAcceptedEmail).toHaveBeenCalledWith(
-      player.email,
-      'Scout One',
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: player.id,
+        actorId: scout.id,
+        title: 'Chat request accepted',
+        message: 'Scout One accepted your chat request.',
+        type: 'chat_accepted',
+        referenceId: chat.id,
+        referenceType: 'chat',
+        preference: 'chatAccepted',
+        dedupeKey: `chat_accepted:${chat.id}`,
+        email: {
+          to: player.email,
+          subject: 'Your NxtPro chat request was accepted',
+          message: 'Scout One accepted your chat request on NxtPro.',
+        },
+      }),
     );
   });
 
@@ -235,17 +222,24 @@ describe('ChatService notifications', () => {
     expect(chatRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'rejected' }),
     );
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: player.id,
-      title: 'Chat request declined',
-      message: 'Scout One declined your chat request.',
-      type: 'message',
-      referenceId: chat.id,
-      preference: 'chatRequests',
-    });
-    expect(mailService.sendChatRejectedEmail).toHaveBeenCalledWith(
-      player.email,
-      'Scout One',
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: player.id,
+        actorId: scout.id,
+        title: 'Chat request declined',
+        message: 'Scout One declined your chat request.',
+        type: 'chat_request',
+        referenceId: chat.id,
+        referenceType: 'chat',
+        preference: 'chatRequests',
+        dedupeKey: `chat_rejected:${chat.id}`,
+        email: {
+          to: player.email,
+          subject: 'Your NxtPro chat request was declined',
+          message: 'Scout One declined your chat request on NxtPro.',
+        },
+      }),
     );
   });
 
@@ -264,7 +258,6 @@ describe('ChatService notifications', () => {
       HttpError,
     );
     expect(chatRepository.save).not.toHaveBeenCalled();
-    expect(mailService.sendChatRejectedEmail).not.toHaveBeenCalled();
   });
 
   it('does not reject accepted chat requests', async () => {
@@ -284,7 +277,7 @@ describe('ChatService notifications', () => {
     expect(chatRepository.save).not.toHaveBeenCalled();
   });
 
-  it('suppresses chat rejection notifications and emails by preference', async () => {
+  it('suppresses chat rejection notifications when the requester muted the chat', async () => {
     const chat = {
       id: 'chat_1',
       status: 'pending',
@@ -294,14 +287,12 @@ describe('ChatService notifications', () => {
     } as Chat;
     const rejectedChat = { ...chat, status: 'rejected' } as Chat;
 
-    notificationPreferencesService.allowsInAppNotification.mockResolvedValue(
-      false,
-    );
-    notificationPreferencesService.allowsEmailNotification.mockResolvedValue(
-      false,
-    );
     chatRepository.findOne.mockResolvedValue(chat);
     chatRepository.findOneOrFail.mockResolvedValue(rejectedChat);
+    participantRepository.findOne.mockResolvedValue({
+      id: 'participant_1',
+      notificationsMuted: true,
+    });
 
     await service.rejectChat(chat.id, scout.id);
 
@@ -309,10 +300,9 @@ describe('ChatService notifications', () => {
       'notification.create',
       expect.anything(),
     );
-    expect(mailService.sendChatRejectedEmail).not.toHaveBeenCalled();
   });
 
-  it('does not fail rejection when declined email sending fails', async () => {
+  it('does not fail rejection after emitting central delivery intent', async () => {
     const chat = {
       id: 'chat_1',
       status: 'pending',
@@ -322,7 +312,6 @@ describe('ChatService notifications', () => {
     } as Chat;
     const rejectedChat = { ...chat, status: 'rejected' } as Chat;
 
-    mailService.sendChatRejectedEmail.mockRejectedValue(new Error('smtp down'));
     chatRepository.findOne.mockResolvedValue(chat);
     chatRepository.findOneOrFail.mockResolvedValue(rejectedChat);
 
@@ -363,24 +352,31 @@ describe('ChatService notifications', () => {
       messageType: 'text',
     });
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: player.id,
-      title: 'New message',
-      message: 'Scout One: Welcome aboard',
-      type: 'message',
-      referenceId: chat.id,
-      preference: 'chatMessages',
-    });
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: player.id,
+        actorId: scout.id,
+        title: 'New message',
+        message: 'Scout One: Welcome aboard',
+        type: 'chat_message',
+        referenceId: chat.id,
+        referenceType: 'chat',
+        preference: 'chatMessages',
+        data: {
+          chatId: chat.id,
+          messageId: 'message_1',
+          senderId: scout.id,
+        },
+      }),
+    );
     expect(eventEmitter.emit).not.toHaveBeenCalledWith(
       'notification.create',
       expect.objectContaining({ userId: scout.id }),
     );
-    expect(mailService.sendChatRequestEmail).not.toHaveBeenCalled();
-    expect(mailService.sendChatAcceptedEmail).not.toHaveBeenCalled();
-    expect(mailService.sendChatRejectedEmail).not.toHaveBeenCalled();
   });
 
-  it('suppresses chat request in-app notifications when disabled', async () => {
+  it('suppresses chat request notifications when the recipient muted the chat', async () => {
     const createdChat = {
       id: 'chat_1',
       status: 'pending',
@@ -389,11 +385,12 @@ describe('ChatService notifications', () => {
       participants: [],
     } as Chat;
 
-    notificationPreferencesService.allowsInAppNotification.mockResolvedValue(
-      false,
-    );
     chatRepository.findOne.mockResolvedValue(null);
     chatRepository.findOneOrFail.mockResolvedValue(createdChat);
+    participantRepository.findOne.mockResolvedValue({
+      id: 'participant_1',
+      notificationsMuted: true,
+    });
 
     await service.startChat(player.id, {
       scoutId: scout.id,
@@ -404,10 +401,9 @@ describe('ChatService notifications', () => {
       'notification.create',
       expect.anything(),
     );
-    expect(mailService.sendChatRequestEmail).toHaveBeenCalled();
   });
 
-  it('suppresses chat request and accepted emails when email notifications are disabled', async () => {
+  it('includes email payloads for chat request and accepted notifications', async () => {
     const createdChat = {
       id: 'chat_1',
       status: 'pending',
@@ -417,9 +413,6 @@ describe('ChatService notifications', () => {
     } as Chat;
     const activeChat = { ...createdChat, status: 'active' } as Chat;
 
-    notificationPreferencesService.allowsEmailNotification.mockResolvedValue(
-      false,
-    );
     chatRepository.findOne.mockResolvedValueOnce(null);
     chatRepository.findOneOrFail.mockResolvedValueOnce(createdChat);
 
@@ -433,12 +426,31 @@ describe('ChatService notifications', () => {
 
     await service.acceptChat(createdChat.id, scout.id);
 
-    expect(mailService.sendChatRequestEmail).not.toHaveBeenCalled();
-    expect(mailService.sendChatAcceptedEmail).not.toHaveBeenCalled();
-    expect(mailService.sendChatRejectedEmail).not.toHaveBeenCalled();
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        type: 'chat_request',
+        email: {
+          to: scout.email,
+          subject: 'New chat request on NxtPro',
+          message: 'Player One: Can we talk?',
+        },
+      }),
+    );
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        type: 'chat_accepted',
+        email: {
+          to: player.email,
+          subject: 'Your NxtPro chat request was accepted',
+          message: 'Scout One accepted your chat request on NxtPro.',
+        },
+      }),
+    );
   });
 
-  it('suppresses new message in-app notifications when chat messages are disabled', async () => {
+  it('suppresses new message notifications when the recipient muted the chat', async () => {
     const chat = {
       id: 'chat_1',
       status: 'active',
@@ -459,15 +471,16 @@ describe('ChatService notifications', () => {
       readAt: null,
     } as Message;
 
-    notificationPreferencesService.allowsInAppNotification.mockResolvedValue(
-      false,
-    );
     chatRepository.findOne.mockResolvedValue(chat);
     chatRepository.findOneOrFail.mockResolvedValue({
       ...chat,
       participants: [],
     });
     messageRepository.findOneOrFail.mockResolvedValue(savedMessage);
+    participantRepository.findOne.mockResolvedValue({
+      id: 'participant_1',
+      notificationsMuted: true,
+    });
 
     await service.sendMessage(chat.id, scout.id, {
       content: 'Welcome aboard',

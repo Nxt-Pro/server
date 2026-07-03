@@ -46,6 +46,10 @@ export class ConfigValidatorService {
         { type: 'Mail', task: this.validateMail() },
         { type: 'OAuth', task: this.validateOAuth() },
       );
+
+      if (this.getBooleanConfig('PUSH_NOTIFICATIONS_ENABLED')) {
+        validations.push({ type: 'Firebase', task: this.validateFirebase() });
+      }
     } else {
       this.logger.warn(
         'External integration validation is relaxed for development. Set STRICT_EXTERNAL_CONFIG_VALIDATION=true to re-enable strict checks.',
@@ -300,6 +304,31 @@ export class ConfigValidatorService {
   }
 
   /**
+   * Validates Firebase Admin configuration when real push delivery is expected
+   */
+  private async validateFirebase(): Promise<void> {
+    const schema = Yup.object({
+      PUSH_NOTIFICATIONS_ENABLED: Yup.string()
+        .required('PUSH_NOTIFICATIONS_ENABLED is required')
+        .oneOf(
+          ['true', 'false'],
+          'PUSH_NOTIFICATIONS_ENABLED must be true or false',
+        ),
+      FIREBASE_PROJECT_ID: Yup.string().required(
+        'FIREBASE_PROJECT_ID is required when PUSH_NOTIFICATIONS_ENABLED=true',
+      ),
+      FIREBASE_CLIENT_EMAIL: Yup.string().required(
+        'FIREBASE_CLIENT_EMAIL is required when PUSH_NOTIFICATIONS_ENABLED=true',
+      ),
+      FIREBASE_PRIVATE_KEY: Yup.string().required(
+        'FIREBASE_PRIVATE_KEY is required when PUSH_NOTIFICATIONS_ENABLED=true',
+      ),
+    });
+
+    await this.runSchemaValidation(schema, 'Firebase configuration');
+  }
+
+  /**
    * Validates OAuth-related environment variables
    */
   private async validateOAuth(): Promise<void> {
@@ -379,6 +408,10 @@ export class ConfigValidatorService {
     );
     const useMockAi = this.getBooleanConfig('USE_MOCK_AI', config);
     const requireAiServiceUrls = isProduction && aiScoringEnabled && !useMockAi;
+    const pushNotificationsEnabled = this.getBooleanConfig(
+      'PUSH_NOTIFICATIONS_ENABLED',
+      config,
+    );
     const aiServiceUrl = (name: string) =>
       yupUrl(
         requireAiServiceUrls
@@ -496,6 +529,10 @@ export class ConfigValidatorService {
       MAIL_FROM: strictExternalValidation
         ? Yup.string().required()
         : optionalString,
+
+      PUSH_NOTIFICATIONS_ENABLED: Yup.string()
+        .oneOf(['true', 'false'])
+        .default('false'),
 
       // OAuth
       GOOGLE_OAUTH_CLIENT_IDS: strictExternalValidation
@@ -725,9 +762,18 @@ export class ConfigValidatorService {
         .default(120000),
 
       // Optional push configuration; FirebaseService degrades gracefully if absent.
-      FIREBASE_PROJECT_ID: optionalString,
-      FIREBASE_CLIENT_EMAIL: optionalString,
-      FIREBASE_PRIVATE_KEY: optionalString,
+      FIREBASE_PROJECT_ID:
+        strictExternalValidation && pushNotificationsEnabled
+          ? Yup.string().required()
+          : optionalString,
+      FIREBASE_CLIENT_EMAIL:
+        strictExternalValidation && pushNotificationsEnabled
+          ? Yup.string().required()
+          : optionalString,
+      FIREBASE_PRIVATE_KEY:
+        strictExternalValidation && pushNotificationsEnabled
+          ? Yup.string().required()
+          : optionalString,
 
       // Seed-only values. The seed script enforces them in production.
       SUPER_ADMIN_1_USERNAME: optionalString,

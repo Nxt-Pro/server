@@ -1,25 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateEventDto, EventQueryDto, UpdateEventDto } from './dtos';
 import { Event, User, Venue } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 import { HttpError } from '@/common/utils';
 
 @Injectable()
 export class EventsService {
-  private readonly logger = new Logger(EventsService.name);
-
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
   private getUserOrThrow = async (userId?: string) => {
     if (!userId) {
@@ -211,7 +205,7 @@ export class EventsService {
     }
 
     const saved = await this.eventRepository.save(event);
-    await this.notifyEventApprovalStatus(saved, approve, rejectionReason);
+    this.notifyEventApprovalStatus(saved, approve, rejectionReason);
     return saved;
   };
 
@@ -223,15 +217,15 @@ export class EventsService {
       throw HttpError.forbidden('Not authorized to delete this event');
     }
 
-    await this.notifyEventCancelled(event, userId);
+    this.notifyEventCancelled(event, userId);
     await this.eventRepository.remove(event);
   };
 
-  private async notifyEventApprovalStatus(
+  private notifyEventApprovalStatus(
     event: Event,
     approved: boolean,
     rejectionReason?: string,
-  ): Promise<void> {
+  ): void {
     const organizerId = event.organizer?.id;
     if (!organizerId || event.approvedBy?.id === organizerId) {
       return;
@@ -240,29 +234,32 @@ export class EventsService {
     const status = approved ? 'approved' : 'rejected';
     this.eventEmitter.emit('notification.create', {
       userId: organizerId,
+      actorId: event.approvedBy?.id,
       title: approved ? 'Event approved' : 'Event rejected',
       message: approved
         ? `"${event.title}" was approved.`
         : `"${event.title}" was rejected.${rejectionReason ? ` ${rejectionReason}` : ''}`,
-      type: 'new_event',
+      type: 'event_updated',
       referenceId: event.id,
+      referenceType: 'event',
       preference: 'eventUpdates',
-    });
-
-    if (
-      event.organizer?.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        organizerId,
-        'eventUpdates',
-      ))
-    ) {
-      this.sendBestEffortEventStatusEmail(
-        event.organizer.email,
-        event.title,
+      dedupeKey: `event_status:${event.id}:${status}`,
+      data: {
+        eventId: event.id,
         status,
-        rejectionReason,
-      );
-    }
+      },
+      email: event.organizer?.email
+        ? {
+            to: event.organizer.email,
+            subject: approved
+              ? 'Your NxtPro event was approved'
+              : 'Your NxtPro event was rejected',
+            message: approved
+              ? `"${event.title}" was approved.`
+              : `"${event.title}" was rejected.${rejectionReason ? ` ${rejectionReason}` : ''}`,
+          }
+        : undefined,
+    });
   }
 
   private notifyEventUpdated(event: Event, actorId: string): void {
@@ -273,19 +270,30 @@ export class EventsService {
     for (const user of recipients) {
       this.eventEmitter.emit('notification.create', {
         userId: user.id,
+        actorId,
         title: 'Event updated',
         message: `"${event.title}" was updated.`,
-        type: 'new_event',
+        type: 'event_updated',
         referenceId: event.id,
+        referenceType: 'event',
         preference: 'eventUpdates',
+        dedupeKey: `event_updated:${event.id}:${event.updatedAt.toISOString()}`,
+        data: {
+          eventId: event.id,
+          actorId,
+        },
+        email: user.email
+          ? {
+              to: user.email,
+              subject: 'A NxtPro event was updated',
+              message: `"${event.title}" was updated.`,
+            }
+          : undefined,
       });
     }
   }
 
-  private async notifyEventCancelled(
-    event: Event,
-    actorId: string,
-  ): Promise<void> {
+  private notifyEventCancelled(event: Event, actorId: string): void {
     const recipients = this.getRegisteredUsers(event).filter(
       user => user.id !== actorId,
     );
@@ -293,22 +301,26 @@ export class EventsService {
     for (const user of recipients) {
       this.eventEmitter.emit('notification.create', {
         userId: user.id,
+        actorId,
         title: 'Event cancelled',
         message: `"${event.title}" was cancelled.`,
-        type: 'new_event',
+        type: 'event_updated',
         referenceId: event.id,
+        referenceType: 'event',
         preference: 'eventUpdates',
+        dedupeKey: `event_cancelled:${event.id}`,
+        data: {
+          eventId: event.id,
+          status: 'cancelled',
+        },
+        email: user.email
+          ? {
+              to: user.email,
+              subject: 'A NxtPro event was cancelled',
+              message: `"${event.title}" was cancelled.`,
+            }
+          : undefined,
       });
-
-      if (
-        user.email &&
-        (await this.notificationPreferencesService.allowsEmailNotification(
-          user.id,
-          'eventUpdates',
-        ))
-      ) {
-        this.sendBestEffortEventCancelledEmail(user.email, event.title);
-      }
     }
   }
 
@@ -317,37 +329,5 @@ export class EventsService {
       .filter(registration => !registration.cancelled)
       .map(registration => registration.player?.user)
       .filter((user): user is User => Boolean(user?.id));
-  }
-
-  private sendBestEffortEventStatusEmail(
-    email: string,
-    eventTitle: string,
-    status: 'approved' | 'rejected',
-    reason?: string,
-  ): void {
-    void this.mailService
-      .sendEventStatusEmail(email, eventTitle, status, reason)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send event status email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private sendBestEffortEventCancelledEmail(
-    email: string,
-    eventTitle: string,
-  ): void {
-    void this.mailService
-      .sendEventCancelledEmail(email, eventTitle)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send event cancelled email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

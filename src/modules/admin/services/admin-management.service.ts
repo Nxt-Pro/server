@@ -12,8 +12,6 @@ import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity
 import { UserRole, UserStatus } from '@/common/enums';
 import { User } from '@/database/entities';
 import { AuditLogRepository, UserRepository } from '@/database/repositories';
-import { MailService } from '@/integrations/mail/mail.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 
 const SALT_ROUNDS = 10;
 
@@ -38,8 +36,6 @@ export class AdminManagementService {
     userRepository: UserRepository,
     auditLogRepository: AuditLogRepository,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.userRepository = userRepository;
     this.auditLogRepository = auditLogRepository;
@@ -214,7 +210,7 @@ export class AdminManagementService {
 
     const updated = await this.userRepository.findById(admin.id);
     if (updates.status !== undefined && updated) {
-      await this.notifyAdminStatusChanged(updated, updated.status);
+      this.notifyAdminStatusChanged(updated, actorId, updated.status);
     }
 
     return this.toResponse(updated!);
@@ -238,42 +234,31 @@ export class AdminManagementService {
     return normalized || undefined;
   }
 
-  private async notifyAdminStatusChanged(
+  private notifyAdminStatusChanged(
     admin: User,
+    actorId: string,
     status: User['status'],
-  ): Promise<void> {
+  ): void {
     this.eventEmitter.emit('notification.create', {
       userId: admin.id,
+      actorId,
       title: 'Account status updated',
       message: `Your NxtPro admin account status is now ${status}.`,
-      type: 'verification',
+      type: 'admin_action',
       referenceId: admin.id,
+      referenceType: 'profile',
       preference: 'verificationUpdates',
+      dedupeKey: `admin_account_status:${admin.id}:${status}`,
+      data: {
+        status,
+      },
+      email: admin.email
+        ? {
+            to: admin.email,
+            subject: 'Your NxtPro admin account status changed',
+            message: `Your NxtPro admin account status is now "${status}".`,
+          }
+        : undefined,
     });
-
-    if (
-      admin.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        admin.id,
-        'verificationUpdates',
-      ))
-    ) {
-      this.sendBestEffortAccountStatusEmail(admin.email, status);
-    }
-  }
-
-  private sendBestEffortAccountStatusEmail(
-    email: string,
-    status: string,
-  ): void {
-    void this.mailService.sendAccountStatusEmail(email, status).catch(error => {
-      this.logger.warn(
-        `Failed to send admin status email: ${this.getErrorMessage(error)}`,
-      );
-    });
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

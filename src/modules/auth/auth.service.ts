@@ -502,6 +502,8 @@ export class AuthService {
           message: notification.message,
           type: notification.type,
           referenceId: notification.referenceId,
+          referenceType: notification.referenceType,
+          data: notification.data,
           readAt: notification.readAt?.toISOString() ?? null,
           createdAt: notification.createdAt.toISOString(),
           updatedAt: notification.updatedAt.toISOString(),

@@ -6,6 +6,7 @@ import 'reflect-metadata';
 import { FindOperator } from 'typeorm';
 import { Notification, User } from '@/database/entities';
 import { FirebaseService } from '@/integrations/firebase/firebase.service';
+import { MailService } from '@/integrations/mail/mail.service';
 import { NotificationPreferencesService } from '@/modules/settings';
 import {
   CreateNotificationEvent,
@@ -21,15 +22,21 @@ describe('NotificationsService', () => {
     update: jest.Mock;
     delete: jest.Mock;
     count: jest.Mock;
+    createQueryBuilder: jest.Mock;
   };
   let userRepo: {
     findOne: jest.Mock;
     save: jest.Mock;
   };
   let firebaseService: { sendMulticastNotification: jest.Mock };
+  let mailService: {
+    isConfigured: jest.Mock;
+    sendNotificationEmail: jest.Mock;
+  };
   let eventEmitter: { emit: jest.Mock };
   let notificationPreferencesService: {
     allowsInAppNotification: jest.Mock;
+    allowsEmailNotification: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -44,6 +51,7 @@ describe('NotificationsService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       count: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
 
     userRepo = {
@@ -55,11 +63,17 @@ describe('NotificationsService', () => {
       sendMulticastNotification: jest.fn(),
     };
 
+    mailService = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      sendNotificationEmail: jest.fn().mockResolvedValue(undefined),
+    };
+
     eventEmitter = {
       emit: jest.fn(),
     };
     notificationPreferencesService = {
       allowsInAppNotification: jest.fn().mockResolvedValue(true),
+      allowsEmailNotification: jest.fn().mockResolvedValue(true),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -76,6 +90,10 @@ describe('NotificationsService', () => {
         {
           provide: FirebaseService,
           useValue: firebaseService,
+        },
+        {
+          provide: MailService,
+          useValue: mailService,
         },
         {
           provide: EventEmitter2,
@@ -113,6 +131,8 @@ describe('NotificationsService', () => {
       message: payload.message,
       type: payload.type,
       referenceId: payload.referenceId,
+      referenceType: null,
+      data: null,
       readAt: null,
       createdAt,
       updatedAt,
@@ -131,6 +151,8 @@ describe('NotificationsService', () => {
       message: payload.message,
       type: payload.type,
       referenceId: payload.referenceId,
+      referenceType: null,
+      data: null,
     });
     expect(
       notificationPreferencesService.allowsInAppNotification,
@@ -145,6 +167,8 @@ describe('NotificationsService', () => {
         message: saved.message,
         type: saved.type,
         referenceId: saved.referenceId,
+        referenceType: null,
+        data: null,
         readAt: null,
         createdAt: createdAt.toISOString(),
         updatedAt: updatedAt.toISOString(),
@@ -152,7 +176,7 @@ describe('NotificationsService', () => {
     });
     expect(userRepo.findOne).toHaveBeenCalledWith({
       where: { id: payload.userId },
-      select: ['fcmTokens'],
+      select: ['id', 'fcmTokens'],
     });
     expect(firebaseService.sendMulticastNotification).toHaveBeenCalledWith(
       ['token_1'],
@@ -163,6 +187,7 @@ describe('NotificationsService', () => {
         notificationId: saved.id,
       }),
     );
+    expect(mailService.sendNotificationEmail).not.toHaveBeenCalled();
   });
 
   it('getUserNotifications queries by userId with pagination and order', async () => {
@@ -297,5 +322,159 @@ describe('NotificationsService', () => {
     expect(notificationRepo.create).not.toHaveBeenCalled();
     expect(notificationRepo.save).not.toHaveBeenCalled();
     expect(firebaseService.sendMulticastNotification).not.toHaveBeenCalled();
+  });
+
+  it('handleNotificationCreate respects email preference independently from in-app', async () => {
+    const payload: CreateNotificationEvent = {
+      userId: 'user_1',
+      title: 'Connection accepted',
+      message: 'Maya accepted your connection.',
+      type: 'connection_accepted',
+      referenceId: 'user_2',
+      preference: 'connections',
+      email: { to: 'user@example.com' },
+    };
+
+    notificationPreferencesService.allowsInAppNotification.mockResolvedValue(
+      false,
+    );
+    notificationPreferencesService.allowsEmailNotification.mockResolvedValue(
+      true,
+    );
+
+    await service.handleNotificationCreate(payload);
+
+    expect(notificationRepo.save).not.toHaveBeenCalled();
+    expect(firebaseService.sendMulticastNotification).not.toHaveBeenCalled();
+    expect(mailService.sendNotificationEmail).toHaveBeenCalledWith({
+      to: 'user@example.com',
+      subject: payload.title,
+      message: payload.message,
+    });
+  });
+
+  it('handleNotificationCreate skips email when email preference suppresses it', async () => {
+    const payload: CreateNotificationEvent = {
+      userId: 'user_1',
+      title: 'New event registration',
+      message: 'A player registered.',
+      type: 'event_registration',
+      preference: 'eventUpdates',
+      email: { to: 'organizer@example.com' },
+    };
+
+    notificationPreferencesService.allowsEmailNotification.mockResolvedValue(
+      false,
+    );
+
+    await service.handleNotificationCreate(payload);
+
+    expect(mailService.sendNotificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('handleNotificationCreate skips notification email when mail is not configured', async () => {
+    const payload: CreateNotificationEvent = {
+      userId: 'user_1',
+      title: 'Report resolved',
+      message: 'Your report was resolved.',
+      type: 'report_status',
+      preference: 'verificationUpdates',
+      email: { to: 'user@example.com' },
+    };
+
+    mailService.isConfigured.mockReturnValue(false);
+
+    await service.handleNotificationCreate(payload);
+
+    expect(mailService.sendNotificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('handleNotificationCreate skips actor self notifications', async () => {
+    await service.handleNotificationCreate({
+      userId: 'user_1',
+      actorId: 'user_1',
+      title: 'Self action',
+      message: 'This should not notify.',
+      type: 'post_like',
+    });
+
+    expect(notificationRepo.save).not.toHaveBeenCalled();
+    expect(mailService.sendNotificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('handleNotificationCreate dedupes by user type reference and dedupe key', async () => {
+    const query = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'existing' }),
+    };
+    notificationRepo.createQueryBuilder.mockReturnValue(query);
+
+    await service.handleNotificationCreate({
+      userId: 'user_1',
+      actorId: 'user_2',
+      title: 'Skill score completed',
+      message: 'Pace scoring finished.',
+      type: 'skill_score',
+      referenceId: 'job_1',
+      referenceType: 'skill_score_job',
+      dedupeKey: 'skill_score:job_1:completed',
+      data: { scoringJobId: 'job_1', status: 'completed' },
+    });
+
+    expect(notificationRepo.createQueryBuilder).toHaveBeenCalledWith(
+      'notification',
+    );
+    expect(query.andWhere).toHaveBeenCalledWith(
+      "notification.data ->> 'dedupeKey' = :dedupeKey",
+      { dedupeKey: 'skill_score:job_1:completed' },
+    );
+    expect(notificationRepo.save).not.toHaveBeenCalled();
+    expect(firebaseService.sendMulticastNotification).not.toHaveBeenCalled();
+  });
+
+  it('handleNotificationCreate removes invalid Firebase tokens after push', async () => {
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    const saved = {
+      id: 'notif_1',
+      title: 'New message',
+      message: 'A message arrived',
+      type: 'chat_message',
+      referenceId: 'chat_1',
+      referenceType: 'chat',
+      data: { chatId: 'chat_1' },
+      readAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const user = {
+      id: 'user_1',
+      fcmTokens: ['live_token', 'dead_token'],
+    };
+
+    notificationRepo.create.mockReturnValue(saved);
+    notificationRepo.save.mockResolvedValue(saved);
+    userRepo.findOne.mockResolvedValue(user);
+    firebaseService.sendMulticastNotification.mockResolvedValue({
+      invalidTokens: ['dead_token'],
+    });
+
+    await service.handleNotificationCreate({
+      userId: 'user_1',
+      actorId: 'user_2',
+      title: saved.title,
+      message: saved.message,
+      type: 'chat_message',
+      referenceId: 'chat_1',
+      referenceType: 'chat',
+      preference: 'chatMessages',
+      data: { chatId: 'chat_1' },
+    });
+
+    expect(userRepo.save).toHaveBeenCalledWith({
+      id: 'user_1',
+      fcmTokens: ['live_token'],
+    });
   });
 });

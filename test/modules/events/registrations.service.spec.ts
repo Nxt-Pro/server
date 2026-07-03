@@ -34,11 +34,6 @@ describe('RegistrationsService notifications', () => {
   let playerProfileRepository: { findOne: jest.Mock };
   let userRepository: { findOne: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
-  let mailService: {
-    sendEventRegistrationSubmittedEmail: jest.Mock;
-    sendEventRegistrationStatusEmail: jest.Mock;
-  };
-  let notificationPreferencesService: { allowsEmailNotification: jest.Mock };
   let service: RegistrationsService;
 
   const player = {
@@ -59,7 +54,7 @@ describe('RegistrationsService notifications', () => {
     maxParticipants: 0,
     participantCount: 0,
     registrationDeadline: null,
-    organizer: { id: 'organizer_1' } as User,
+    organizer: { id: 'organizer_1', email: 'organizer@nxtpro.dev' } as User,
   } as Event;
   const registration = {
     id: 'registration_1',
@@ -86,15 +81,6 @@ describe('RegistrationsService notifications', () => {
       }),
     };
     eventEmitter = { emit: jest.fn() };
-    mailService = {
-      sendEventRegistrationSubmittedEmail: jest
-        .fn()
-        .mockResolvedValue(undefined),
-      sendEventRegistrationStatusEmail: jest.fn().mockResolvedValue(undefined),
-    };
-    notificationPreferencesService = {
-      allowsEmailNotification: jest.fn().mockResolvedValue(true),
-    };
 
     service = new RegistrationsService(
       eventRepository as unknown as Repository<Event>,
@@ -102,12 +88,10 @@ describe('RegistrationsService notifications', () => {
       playerProfileRepository as unknown as Repository<PlayerProfile>,
       userRepository as unknown as Repository<User>,
       eventEmitter as never,
-      mailService as never,
-      notificationPreferencesService as never,
     );
   });
 
-  it('notifies the organizer and confirms by email when a player registers', async () => {
+  it('emits central delivery intent when a player registers', async () => {
     const qb = createQueryBuilderMock();
     const manager = {
       findOne: jest.fn().mockResolvedValue(event),
@@ -126,74 +110,82 @@ describe('RegistrationsService notifications', () => {
 
     await service.registerForEvent(event.id, player.id);
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'organizer_1',
-      title: 'New event registration',
-      message: 'Player One registered for "Trial Day".',
-      type: 'new_event',
-      referenceId: event.id,
-      preference: 'eventUpdates',
-    });
-    expect(
-      notificationPreferencesService.allowsEmailNotification,
-    ).toHaveBeenCalledWith(player.id, 'eventUpdates');
-    expect(
-      mailService.sendEventRegistrationSubmittedEmail,
-    ).toHaveBeenCalledWith(player.email, event.title);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'organizer_1',
+        actorId: player.id,
+        title: 'New event registration',
+        message: 'Player One registered for "Trial Day".',
+        type: 'event_registration',
+        referenceId: event.id,
+        referenceType: 'event',
+        preference: 'eventUpdates',
+        dedupeKey: `event_registration_submitted:${event.id}:${player.id}`,
+        email: {
+          to: 'organizer@nxtpro.dev',
+          subject: 'New NxtPro event registration',
+          message: 'Player One registered for "Trial Day".',
+        },
+      }),
+    );
   });
 
-  it('notifies and emails the player when registration status changes', async () => {
-    const approved = {
+  it('emits central delivery intent when registration status changes', async () => {
+    const pending = {
       ...registration,
+      status: 'pending',
+    } as EventRegistration;
+    const approved = {
+      ...pending,
       status: 'approved',
     } as EventRegistration;
 
-    registrationRepository.findOne.mockResolvedValue(registration);
+    registrationRepository.findOne.mockResolvedValue(pending);
     registrationRepository.save.mockResolvedValue(approved);
 
     await service.updateRegistration(registration.id, admin.id, {
       status: 'approved',
     });
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: player.id,
-      title: 'Registration status updated',
-      message: 'Your registration for "Trial Day" is now approved.',
-      type: 'new_event',
-      referenceId: event.id,
-      preference: 'eventUpdates',
-    });
-    expect(mailService.sendEventRegistrationStatusEmail).toHaveBeenCalledWith(
-      player.email,
-      event.title,
-      'approved',
-    );
-  });
-
-  it('suppresses registration emails when event emails are disabled', async () => {
-    const rejected = {
-      ...registration,
-      status: 'rejected',
-    } as EventRegistration;
-
-    notificationPreferencesService.allowsEmailNotification.mockResolvedValue(
-      false,
-    );
-    registrationRepository.findOne.mockResolvedValue(registration);
-    registrationRepository.save.mockResolvedValue(rejected);
-
-    await service.updateRegistration(registration.id, admin.id, {
-      status: 'rejected',
-    });
-
     expect(eventEmitter.emit).toHaveBeenCalledWith(
       'notification.create',
       expect.objectContaining({
         userId: player.id,
+        actorId: admin.id,
+        title: 'Registration status updated',
+        message: 'Your registration for "Trial Day" is now approved.',
+        type: 'event_registration',
+        referenceId: event.id,
+        referenceType: 'event',
         preference: 'eventUpdates',
+        dedupeKey: `event_registration_status:${registration.id}:approved`,
+        email: {
+          to: player.email,
+          subject: 'Your NxtPro event registration was accepted',
+          message: 'Your registration for "Trial Day" is now approved.',
+        },
       }),
     );
-    expect(mailService.sendEventRegistrationStatusEmail).not.toHaveBeenCalled();
+  });
+
+  it('does not emit a new notification when registration status is unchanged', async () => {
+    const pending = {
+      ...registration,
+      status: 'pending',
+    } as EventRegistration;
+
+    registrationRepository.findOne.mockResolvedValue(pending);
+    registrationRepository.save.mockResolvedValue(pending);
+
+    await service.updateRegistration(registration.id, admin.id, {
+      status: 'pending',
+    });
+
+    expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+      'notification.create',
+      expect.anything(),
+    );
   });
 
   it('notifies the organizer when a player cancels a registration', async () => {
@@ -202,7 +194,7 @@ describe('RegistrationsService notifications', () => {
       cancelled: false,
       event: {
         ...event,
-        organizer: { id: 'organizer_1' } as User,
+        organizer: { id: 'organizer_1', email: 'organizer@nxtpro.dev' } as User,
         participantCount: 1,
       },
     } as EventRegistration;
@@ -219,13 +211,24 @@ describe('RegistrationsService notifications', () => {
 
     await service.cancelRegistration(registration.id, player.id);
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'organizer_1',
-      title: 'Registration cancelled',
-      message: 'Player One cancelled their registration for "Trial Day".',
-      type: 'new_event',
-      referenceId: event.id,
-      preference: 'eventUpdates',
-    });
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'organizer_1',
+        actorId: player.id,
+        title: 'Registration cancelled',
+        message: 'Player One cancelled their registration for "Trial Day".',
+        type: 'event_registration',
+        referenceId: event.id,
+        referenceType: 'event',
+        preference: 'eventUpdates',
+        dedupeKey: `event_registration_cancelled:${registration.id}`,
+        email: {
+          to: 'organizer@nxtpro.dev',
+          subject: 'A NxtPro event registration was cancelled',
+          message: 'Player One cancelled their registration for "Trial Day".',
+        },
+      }),
+    );
   });
 });

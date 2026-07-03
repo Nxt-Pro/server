@@ -43,8 +43,6 @@ describe('EventsService', () => {
   };
   let userRepoMock: { findOne: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
-  let mailService: { sendEventStatusEmail: jest.Mock };
-  let notificationPreferencesService: { allowsEmailNotification: jest.Mock };
 
   beforeEach(() => {
     eventRepoMock = {
@@ -59,19 +57,11 @@ describe('EventsService', () => {
       findOne: jest.fn(),
     };
     eventEmitter = { emit: jest.fn() };
-    mailService = {
-      sendEventStatusEmail: jest.fn().mockResolvedValue(undefined),
-    };
-    notificationPreferencesService = {
-      allowsEmailNotification: jest.fn().mockResolvedValue(true),
-    };
 
     service = new EventsService(
       eventRepoMock as unknown as Repository<Event>,
       userRepoMock as unknown as Repository<User>,
       eventEmitter as never,
-      mailService as never,
-      notificationPreferencesService as never,
     );
   });
 
@@ -165,7 +155,7 @@ describe('EventsService', () => {
     ).rejects.toBeInstanceOf(HttpError);
   });
 
-  it('notifies and emails the organizer when an event is approved', async () => {
+  it('emits central delivery intent when an event is approved', async () => {
     const event = {
       id: 'event-1',
       title: 'Trial Day',
@@ -187,22 +177,24 @@ describe('EventsService', () => {
 
     await service.approveEvent(event.id, 'admin-1', true);
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'scout-1',
-      title: 'Event approved',
-      message: '"Trial Day" was approved.',
-      type: 'new_event',
-      referenceId: event.id,
-      preference: 'eventUpdates',
-    });
-    expect(
-      notificationPreferencesService.allowsEmailNotification,
-    ).toHaveBeenCalledWith('scout-1', 'eventUpdates');
-    expect(mailService.sendEventStatusEmail).toHaveBeenCalledWith(
-      'scout@nxtpro.dev',
-      'Trial Day',
-      'approved',
-      undefined,
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'scout-1',
+        actorId: 'admin-1',
+        title: 'Event approved',
+        message: '"Trial Day" was approved.',
+        type: 'event_updated',
+        referenceId: event.id,
+        referenceType: 'event',
+        preference: 'eventUpdates',
+        dedupeKey: 'event_status:event-1:approved',
+        email: {
+          to: 'scout@nxtpro.dev',
+          subject: 'Your NxtPro event was approved',
+          message: '"Trial Day" was approved.',
+        },
+      }),
     );
   });
 

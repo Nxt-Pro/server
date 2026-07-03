@@ -798,7 +798,7 @@ export class PostsService {
     });
     await this.commentRepository.save(comment);
     await this.postRepository.increment({ id: postId }, 'commentsCount', 1);
-    await this.notifyPostCommented(post, userId, dto.content);
+    await this.notifyPostCommented(post, userId, dto.content, comment.id);
     const savedComment = await this.commentRepository.findOne({
       where: { id: comment.id },
       relations: ['user', 'user.playerProfile', 'user.scoutProfile'],
@@ -1443,11 +1443,18 @@ export class PostsService {
     const actor = await this.findUserWithProfiles(actorId);
     this.eventEmitter.emit('notification.create', {
       userId: post.userId,
+      actorId,
       title: 'New like',
       message: `${this.getDisplayName(actor)} liked your post.`,
-      type: 'like',
+      type: 'post_like',
       referenceId: post.id,
+      referenceType: 'post',
       preference: 'postEngagement',
+      dedupeKey: `post_like:${post.id}:${actorId}`,
+      data: {
+        postId: post.id,
+        actorId,
+      },
     });
   }
 
@@ -1455,6 +1462,7 @@ export class PostsService {
     post: Post,
     actorId: string,
     content: string,
+    commentId: string,
   ): Promise<void> {
     if (post.userId === actorId) {
       return;
@@ -1464,13 +1472,21 @@ export class PostsService {
     const preview = content.trim().slice(0, 120);
     this.eventEmitter.emit('notification.create', {
       userId: post.userId,
+      actorId,
       title: 'New comment',
       message: preview
         ? `${this.getDisplayName(actor)} commented: ${preview}`
         : `${this.getDisplayName(actor)} commented on your post.`,
-      type: 'comment',
+      type: 'post_comment',
       referenceId: post.id,
+      referenceType: 'post',
       preference: 'postEngagement',
+      dedupeKey: `post_comment:${commentId}`,
+      data: {
+        postId: post.id,
+        commentId,
+        actorId,
+      },
     });
   }
 

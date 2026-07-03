@@ -19,8 +19,6 @@ describe('AdminManagementService', () => {
   };
   let auditLogRepository: { log: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
-  let mailService: { sendAccountStatusEmail: jest.Mock };
-  let notificationPreferencesService: { allowsEmailNotification: jest.Mock };
 
   const admin = {
     id: 'admin_1',
@@ -41,19 +39,11 @@ describe('AdminManagementService', () => {
     };
     auditLogRepository = { log: jest.fn() };
     eventEmitter = { emit: jest.fn() };
-    mailService = {
-      sendAccountStatusEmail: jest.fn().mockResolvedValue(undefined),
-    };
-    notificationPreferencesService = {
-      allowsEmailNotification: jest.fn().mockResolvedValue(true),
-    };
 
     service = new AdminManagementService(
       userRepository as never,
       auditLogRepository as never,
       eventEmitter as never,
-      mailService as never,
-      notificationPreferencesService as never,
     );
   });
 
@@ -195,17 +185,24 @@ describe('AdminManagementService', () => {
       status: UserStatus.SUSPENDED,
     });
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: admin.id,
-      title: 'Account status updated',
-      message: 'Your NxtPro admin account status is now suspended.',
-      type: 'verification',
-      referenceId: admin.id,
-      preference: 'verificationUpdates',
-    });
-    expect(mailService.sendAccountStatusEmail).toHaveBeenCalledWith(
-      admin.email,
-      'suspended',
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: admin.id,
+        actorId: 'actor_1',
+        title: 'Account status updated',
+        message: 'Your NxtPro admin account status is now suspended.',
+        type: 'admin_action',
+        referenceId: admin.id,
+        referenceType: 'profile',
+        preference: 'verificationUpdates',
+        dedupeKey: `admin_account_status:${admin.id}:suspended`,
+        email: {
+          to: admin.email,
+          subject: 'Your NxtPro admin account status changed',
+          message: 'Your NxtPro admin account status is now "suspended".',
+        },
+      }),
     );
   });
 

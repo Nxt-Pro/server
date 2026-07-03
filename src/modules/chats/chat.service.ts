@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, IsNull, MoreThan, Not, Repository } from 'typeorm';
@@ -11,12 +11,7 @@ import {
   Report,
   User,
 } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
 import { HttpError } from '@/common/utils';
-import {
-  NotificationPreferenceKey,
-  NotificationPreferencesService,
-} from '@/modules/settings';
 
 const CHAT_PROFILE_RELATIONS = [
   'participants',
@@ -39,8 +34,6 @@ const MESSAGE_SENDER_RELATIONS = [
 
 @Injectable()
 export class ChatService {
-  private readonly logger = new Logger(ChatService.name);
-
   constructor(
     @InjectRepository(Chat)
     private readonly chatRepository: Repository<Chat>,
@@ -55,8 +48,6 @@ export class ChatService {
     @InjectRepository(Block)
     private readonly blockRepository: Repository<Block>,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
   private getUserOrThrow = async (userId?: string) => {
     if (!userId) {
@@ -183,36 +174,33 @@ export class ChatService {
         message: initialMessage,
       });
 
-      if (
-        await this.shouldSendChatInAppNotification(
-          scoutId,
-          createdChat.id,
-          'chatRequests',
-        )
-      ) {
+      if (!(await this.isChatNotificationMuted(scoutId, createdChat.id))) {
         this.eventEmitter.emit('notification.create', {
           userId: scoutId,
+          actorId: initiatorId,
           title: 'New chat request',
           message: initialMessage
             ? `${requesterName}: ${initialMessage}`
             : `${requesterName} requested to chat with you.`,
-          type: 'message',
+          type: 'chat_request',
           referenceId: createdChat.id,
+          referenceType: 'chat',
           preference: 'chatRequests',
+          dedupeKey: `chat_request:${createdChat.id}`,
+          data: {
+            chatId: createdChat.id,
+            requesterId: initiatorId,
+          },
+          email: targetUser.email
+            ? {
+                to: targetUser.email,
+                subject: 'New chat request on NxtPro',
+                message: initialMessage
+                  ? `${requesterName}: ${initialMessage}`
+                  : `${requesterName} requested to chat with you on NxtPro.`,
+              }
+            : undefined,
         });
-      }
-
-      if (
-        await this.notificationPreferencesService.allowsEmailNotification(
-          scoutId,
-          'chatRequests',
-        )
-      ) {
-        this.sendBestEffortChatRequestEmail(
-          targetUser.email,
-          requesterName,
-          initialMessage,
-        );
       }
     }
 
@@ -257,31 +245,29 @@ export class ChatService {
     if (playerId && playerId !== scoutId) {
       const scoutName = this.getDisplayName(chat.scout);
 
-      if (
-        await this.shouldSendChatInAppNotification(
-          playerId,
-          chat.id,
-          'chatAccepted',
-        )
-      ) {
+      if (!(await this.isChatNotificationMuted(playerId, chat.id))) {
         this.eventEmitter.emit('notification.create', {
           userId: playerId,
+          actorId: scoutId,
           title: 'Chat request accepted',
           message: `${scoutName} accepted your chat request.`,
-          type: 'message',
+          type: 'chat_accepted',
           referenceId: chat.id,
+          referenceType: 'chat',
           preference: 'chatAccepted',
+          dedupeKey: `chat_accepted:${chat.id}`,
+          data: {
+            chatId: chat.id,
+            scoutId,
+          },
+          email: chat.player?.email
+            ? {
+                to: chat.player.email,
+                subject: 'Your NxtPro chat request was accepted',
+                message: `${scoutName} accepted your chat request on NxtPro.`,
+              }
+            : undefined,
         });
-      }
-
-      if (
-        chat.player?.email &&
-        (await this.notificationPreferencesService.allowsEmailNotification(
-          playerId,
-          'chatAccepted',
-        ))
-      ) {
-        this.sendBestEffortChatAcceptedEmail(chat.player.email, scoutName);
       }
     }
 
@@ -334,31 +320,30 @@ export class ChatService {
     });
 
     if (playerId && playerId !== scoutId) {
-      if (
-        await this.shouldSendChatInAppNotification(
-          playerId,
-          chat.id,
-          'chatRequests',
-        )
-      ) {
+      if (!(await this.isChatNotificationMuted(playerId, chat.id))) {
         this.eventEmitter.emit('notification.create', {
           userId: playerId,
+          actorId: scoutId,
           title: 'Chat request declined',
           message: `${scoutName} declined your chat request.`,
-          type: 'message',
+          type: 'chat_request',
           referenceId: chat.id,
+          referenceType: 'chat',
           preference: 'chatRequests',
+          dedupeKey: `chat_rejected:${chat.id}`,
+          data: {
+            chatId: chat.id,
+            scoutId,
+            status: 'rejected',
+          },
+          email: chat.player?.email
+            ? {
+                to: chat.player.email,
+                subject: 'Your NxtPro chat request was declined',
+                message: `${scoutName} declined your chat request on NxtPro.`,
+              }
+            : undefined,
         });
-      }
-
-      if (
-        chat.player?.email &&
-        (await this.notificationPreferencesService.allowsEmailNotification(
-          playerId,
-          'chatRequests',
-        ))
-      ) {
-        this.sendBestEffortChatRejectedEmail(chat.player.email, scoutName);
       }
     }
 
@@ -514,19 +499,22 @@ export class ChatService {
     if (
       recipientId &&
       recipientId !== senderId &&
-      (await this.shouldSendChatInAppNotification(
-        recipientId,
-        chatId,
-        'chatMessages',
-      ))
+      !(await this.isChatNotificationMuted(recipientId, chatId))
     ) {
       this.eventEmitter.emit('notification.create', {
         userId: recipientId,
+        actorId: senderId,
         title: 'New message',
         message: `${this.getDisplayName(savedMessageWithSender.sender)}: ${dto.content}`,
-        type: 'message',
+        type: 'chat_message',
         referenceId: chatId,
+        referenceType: 'chat',
         preference: 'chatMessages',
+        data: {
+          chatId,
+          messageId: savedMessage.id,
+          senderId,
+        },
       });
     }
 
@@ -535,56 +523,6 @@ export class ChatService {
 
   private getDisplayName(user?: User | null): string {
     return user?.username || user?.email || 'Someone';
-  }
-
-  private sendBestEffortChatRequestEmail(
-    email: string | undefined,
-    requesterName: string,
-    messagePreview?: string,
-  ): void {
-    if (!email) return;
-
-    void this.mailService
-      .sendChatRequestEmail(email, requesterName, messagePreview)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send chat request email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private sendBestEffortChatAcceptedEmail(
-    email: string | undefined,
-    scoutName: string,
-  ): void {
-    if (!email) return;
-
-    void this.mailService
-      .sendChatAcceptedEmail(email, scoutName)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send chat accepted email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private sendBestEffortChatRejectedEmail(
-    email: string | undefined,
-    scoutName: string,
-  ): void {
-    if (!email) return;
-
-    void this.mailService
-      .sendChatRejectedEmail(email, scoutName)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send chat rejected email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 
   markChatRead = async (chatId: string, userId: string): Promise<void> => {
@@ -766,26 +704,15 @@ export class ChatService {
     return participant;
   }
 
-  private async shouldSendChatInAppNotification(
+  private async isChatNotificationMuted(
     userId: string,
     chatId: string,
-    preference: NotificationPreferenceKey,
   ): Promise<boolean> {
-    const allowed =
-      await this.notificationPreferencesService.allowsInAppNotification(
-        userId,
-        preference,
-      );
-
-    if (!allowed) {
-      return false;
-    }
-
     const participant = await this.participantRepository.findOne({
       where: { chat: { id: chatId }, user: { id: userId } },
     });
 
-    return !participant?.notificationsMuted;
+    return Boolean(participant?.notificationsMuted);
   }
 
   private assertChatNotBlocked(

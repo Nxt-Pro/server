@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,14 +9,10 @@ import {
   PlayerProfile,
   User,
 } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 import { HttpError } from '@/common/utils';
 
 @Injectable()
 export class RegistrationsService {
-  private readonly logger = new Logger(RegistrationsService.name);
-
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
@@ -27,8 +23,6 @@ export class RegistrationsService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {}
 
   private getUserOrThrow = async (userId?: string) => {
@@ -125,7 +119,7 @@ export class RegistrationsService {
       },
     );
 
-    await this.notifyRegistrationSubmitted(result.event, playerUser);
+    this.notifyRegistrationSubmitted(result.event, playerUser);
 
     return (
       (await this.registrationRepository.findOne({
@@ -166,7 +160,7 @@ export class RegistrationsService {
     const saved = await this.registrationRepository.save(registration);
 
     if (dto.status && dto.status !== previousStatus) {
-      await this.notifyRegistrationStatusChanged(saved, dto.status);
+      this.notifyRegistrationStatusChanged(saved, dto.status, adminId);
     }
 
     return saved;
@@ -220,38 +214,41 @@ export class RegistrationsService {
     return result.registration;
   };
 
-  private async notifyRegistrationSubmitted(
-    event: Event,
-    player: User,
-  ): Promise<void> {
+  private notifyRegistrationSubmitted(event: Event, player: User): void {
     const organizerId = event.organizer?.id;
 
     if (organizerId && organizerId !== player.id) {
       this.eventEmitter.emit('notification.create', {
         userId: organizerId,
+        actorId: player.id,
         title: 'New event registration',
         message: `${this.getDisplayName(player)} registered for "${event.title}".`,
-        type: 'new_event',
+        type: 'event_registration',
         referenceId: event.id,
+        referenceType: 'event',
         preference: 'eventUpdates',
+        dedupeKey: `event_registration_submitted:${event.id}:${player.id}`,
+        data: {
+          eventId: event.id,
+          playerId: player.id,
+          status: 'submitted',
+        },
+        email: event.organizer?.email
+          ? {
+              to: event.organizer.email,
+              subject: 'New NxtPro event registration',
+              message: `${this.getDisplayName(player)} registered for "${event.title}".`,
+            }
+          : undefined,
       });
-    }
-
-    if (
-      player.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        player.id,
-        'eventUpdates',
-      ))
-    ) {
-      this.sendBestEffortRegistrationSubmittedEmail(player.email, event.title);
     }
   }
 
-  private async notifyRegistrationStatusChanged(
+  private notifyRegistrationStatusChanged(
     registration: EventRegistration,
     status: 'pending' | 'approved' | 'rejected',
-  ): Promise<void> {
+    actorId: string,
+  ): void {
     const player = registration.player?.user;
     const event = registration.event;
 
@@ -261,27 +258,31 @@ export class RegistrationsService {
 
     this.eventEmitter.emit('notification.create', {
       userId: player.id,
+      actorId,
       title: 'Registration status updated',
       message: `Your registration for "${event.title}" is now ${status}.`,
-      type: 'new_event',
+      type: 'event_registration',
       referenceId: event.id,
+      referenceType: 'event',
       preference: 'eventUpdates',
-    });
-
-    if (
-      (status === 'approved' || status === 'rejected') &&
-      player.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        player.id,
-        'eventUpdates',
-      ))
-    ) {
-      this.sendBestEffortRegistrationStatusEmail(
-        player.email,
-        event.title,
+      dedupeKey: `event_registration_status:${registration.id}:${status}`,
+      data: {
+        eventId: event.id,
+        registrationId: registration.id,
         status,
-      );
-    }
+      },
+      email:
+        (status === 'approved' || status === 'rejected') && player.email
+          ? {
+              to: player.email,
+              subject:
+                status === 'approved'
+                  ? 'Your NxtPro event registration was accepted'
+                  : 'Your NxtPro event registration was rejected',
+              message: `Your registration for "${event.title}" is now ${status}.`,
+            }
+          : undefined,
+    });
   }
 
   private notifyRegistrationCancelled(
@@ -297,39 +298,27 @@ export class RegistrationsService {
 
     this.eventEmitter.emit('notification.create', {
       userId: organizerId,
+      actorId,
       title: 'Registration cancelled',
       message: `${this.getDisplayName(registration.player?.user)} cancelled their registration for "${event.title}".`,
-      type: 'new_event',
+      type: 'event_registration',
       referenceId: event.id,
+      referenceType: 'event',
       preference: 'eventUpdates',
+      dedupeKey: `event_registration_cancelled:${registration.id}`,
+      data: {
+        eventId: event.id,
+        registrationId: registration.id,
+        status: 'cancelled',
+      },
+      email: event.organizer?.email
+        ? {
+            to: event.organizer.email,
+            subject: 'A NxtPro event registration was cancelled',
+            message: `${this.getDisplayName(registration.player?.user)} cancelled their registration for "${event.title}".`,
+          }
+        : undefined,
     });
-  }
-
-  private sendBestEffortRegistrationSubmittedEmail(
-    email: string,
-    eventTitle: string,
-  ): void {
-    void this.mailService
-      .sendEventRegistrationSubmittedEmail(email, eventTitle)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send registration submitted email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private sendBestEffortRegistrationStatusEmail(
-    email: string,
-    eventTitle: string,
-    status: 'approved' | 'rejected',
-  ): void {
-    void this.mailService
-      .sendEventRegistrationStatusEmail(email, eventTitle, status)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send registration status email: ${this.getErrorMessage(error)}`,
-        );
-      });
   }
 
   private getDisplayName(user?: User | null): string {
@@ -340,9 +329,5 @@ export class RegistrationsService {
       user?.email ??
       'Someone'
     );
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

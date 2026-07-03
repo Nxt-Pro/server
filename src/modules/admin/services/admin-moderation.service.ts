@@ -9,8 +9,6 @@ import { FindOptionsOrder, FindOptionsWhere } from 'typeorm';
 
 import { ReportSeverity, ReportStatus, ReportType } from '@/common/enums';
 import { Report, User } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 import {
   AuditLogRepository,
   ReportRepository,
@@ -31,8 +29,6 @@ export class AdminModerationService {
     userRepository: UserRepository,
     auditLogRepository: AuditLogRepository,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.reportRepository = reportRepository;
     this.userRepository = userRepository;
@@ -116,7 +112,49 @@ export class AdminModerationService {
 
     this.logger.log(`Report ${reportId} ${data.status} by admin ${adminId}`);
 
-    return (await this.reportRepository.findWithReporter(reportId))!;
+    const updatedReport =
+      (await this.reportRepository.findWithReporter(reportId))!;
+    this.notifyReportStatusChanged(updatedReport, adminId, data.status);
+
+    return updatedReport;
+  }
+
+  private notifyReportStatusChanged(
+    report: Report,
+    adminId: string,
+    status: 'resolved' | 'dismissed',
+  ): void {
+    const reporter = report.reporter;
+
+    if (!reporter?.id || reporter.id === adminId) {
+      return;
+    }
+
+    this.eventEmitter.emit('notification.create', {
+      userId: reporter.id,
+      actorId: adminId,
+      title: status === 'resolved' ? 'Report resolved' : 'Report dismissed',
+      message: `Your report "${report.title}" was ${status}.`,
+      type: 'report_status',
+      referenceId: report.id,
+      referenceType: 'report',
+      preference: 'verificationUpdates',
+      dedupeKey: `report_status:${report.id}:${status}`,
+      data: {
+        reportId: report.id,
+        status,
+      },
+      email: reporter.email
+        ? {
+            to: reporter.email,
+            subject:
+              status === 'resolved'
+                ? 'Your NxtPro report was resolved'
+                : 'Your NxtPro report was dismissed',
+            message: `Your report "${report.title}" was ${status}.`,
+          }
+        : undefined,
+    });
   }
 
   /**
@@ -158,7 +196,7 @@ export class AdminModerationService {
     });
 
     this.logger.log(`User ${userId} banned by admin ${adminId}`);
-    await this.notifyAccountStatusChanged(user, 'banned', reason);
+    this.notifyAccountStatusChanged(user, adminId, 'banned', reason);
 
     return { message: `User ${userId} has been banned` };
   }
@@ -194,51 +232,37 @@ export class AdminModerationService {
     });
 
     this.logger.log(`User ${userId} unbanned by admin ${adminId}`);
-    await this.notifyAccountStatusChanged(user, 'active');
+    this.notifyAccountStatusChanged(user, adminId, 'active');
 
     return { message: `User ${userId} has been unbanned` };
   }
 
-  private async notifyAccountStatusChanged(
+  private notifyAccountStatusChanged(
     user: User,
+    adminId: string,
     status: User['status'],
     reason?: string,
-  ): Promise<void> {
+  ): void {
     this.eventEmitter.emit('notification.create', {
       userId: user.id,
+      actorId: adminId,
       title: 'Account status updated',
       message: `Your NxtPro account status is now ${status}.${reason ? ` ${reason}` : ''}`,
-      type: 'verification',
+      type: 'admin_action',
       referenceId: user.id,
+      referenceType: 'profile',
       preference: 'verificationUpdates',
+      dedupeKey: `account_status:${user.id}:${status}`,
+      data: {
+        status,
+      },
+      email: user.email
+        ? {
+            to: user.email,
+            subject: 'Your NxtPro account status changed',
+            message: `Your NxtPro account status is now "${status}".${reason ? ` ${reason}` : ''}`,
+          }
+        : undefined,
     });
-
-    if (
-      user.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        user.id,
-        'verificationUpdates',
-      ))
-    ) {
-      this.sendBestEffortAccountStatusEmail(user.email, status, reason);
-    }
-  }
-
-  private sendBestEffortAccountStatusEmail(
-    email: string,
-    status: string,
-    reason?: string,
-  ): void {
-    void this.mailService
-      .sendAccountStatusEmail(email, status, reason)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send account status email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

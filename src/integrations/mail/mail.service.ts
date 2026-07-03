@@ -91,6 +91,26 @@ export class MailService {
     });
   }
 
+  isConfigured(): boolean {
+    return Boolean(this.transporter);
+  }
+
+  async sendNotificationEmail(options: {
+    to: string;
+    subject: string;
+    message: string;
+  }): Promise<void> {
+    const text = `${options.message}
+
+Open NxtPro to view the latest update.`;
+
+    await this.sendMail({
+      to: options.to,
+      subject: options.subject,
+      text,
+    });
+  }
+
   async sendPasswordResetEmail(email: string, resetUrl: string): Promise<void> {
     const subject = 'Reset your NxtPro password';
     const text = `You requested a password reset for your NxtPro account.

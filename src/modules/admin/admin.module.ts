@@ -13,14 +13,10 @@ import {
 
 import { Connection, Event, Post } from '@/database/entities';
 import { RepositoriesModule } from '@/database/repositories.module';
-import { MailModule } from '@/integrations/mail/mail.module';
-import { SettingsModule } from '@/modules/settings';
 
 @Module({
   imports: [
-    MailModule,
     RepositoriesModule,
-    SettingsModule,
     // TODO: remove once all repositories are reachable via RepositoriesModule exports
     TypeOrmModule.forFeature([Post, Event, Connection]),
   ],

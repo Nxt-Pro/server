@@ -2,7 +2,6 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -18,12 +17,9 @@ import {
   ScoutProfile,
   User,
 } from '@/database/entities';
-import { MailService } from '@/integrations/mail/mail.service';
-import { NotificationPreferencesService } from '@/modules/settings';
 
 @Injectable()
 export class ConnectionsService {
-  private readonly logger = new Logger(ConnectionsService.name);
   private readonly connectionRepository: Repository<Connection>;
   private readonly playerConnectionRepository: Repository<PlayerConnection>;
   private readonly playerProfileRepository: Repository<PlayerProfile>;
@@ -42,8 +38,6 @@ export class ConnectionsService {
     @InjectRepository(User)
     userRepository: Repository<User>,
     private readonly eventEmitter: EventEmitter2,
-    private readonly mailService: MailService,
-    private readonly notificationPreferencesService: NotificationPreferencesService,
   ) {
     this.connectionRepository = connectionRepository;
     this.playerConnectionRepository = playerConnectionRepository;
@@ -87,7 +81,7 @@ export class ConnectionsService {
       requestedAt: new Date(),
     });
     await this.connectionRepository.save(connection);
-    await this.notifyConnectionRequested(playerId, scoutUserId);
+    await this.notifyConnectionRequested(connection.id, playerId, scoutUserId);
     return this.toResponse(connection);
   }
 
@@ -130,7 +124,11 @@ export class ConnectionsService {
       requestedAt: new Date(),
     });
     await this.playerConnectionRepository.save(connection);
-    await this.notifyConnectionRequested(addresseeId, requesterUserId);
+    await this.notifyConnectionRequested(
+      connection.id,
+      addresseeId,
+      requesterUserId,
+    );
     return this.toPlayerConnectionResponse(connection);
   }
 
@@ -167,7 +165,7 @@ export class ConnectionsService {
       requestedAt: new Date(),
     });
     await this.connectionRepository.save(connection);
-    await this.notifyConnectionRequested(scoutId, playerUserId);
+    await this.notifyConnectionRequested(connection.id, scoutId, playerUserId);
     return this.toResponse(connection);
   }
 
@@ -195,6 +193,7 @@ export class ConnectionsService {
     connection.respondedAt = new Date();
     await this.playerConnectionRepository.save(connection);
     await this.notifyConnectionResponded(
+      connection.id,
       connection.requesterId,
       userId,
       dto.status,
@@ -230,6 +229,7 @@ export class ConnectionsService {
     connection.respondedAt = new Date();
     await this.connectionRepository.save(connection);
     await this.notifyConnectionResponded(
+      connection.id,
       connection.initiatedBy === 'player'
         ? connection.playerId
         : connection.scoutId,
@@ -289,6 +289,7 @@ export class ConnectionsService {
   }
 
   private async notifyConnectionRequested(
+    connectionId: string,
     recipientId: string,
     requesterId: string,
   ): Promise<void> {
@@ -304,25 +305,30 @@ export class ConnectionsService {
 
     this.eventEmitter.emit('notification.create', {
       userId: recipientId,
+      actorId: requesterId,
       title: 'New connection request',
       message: `${requesterName} sent you a connection request.`,
       type: 'connection_request',
       referenceId: requesterId,
+      referenceType: 'profile',
       preference: 'connections',
+      dedupeKey: `connection_request:${connectionId}`,
+      data: {
+        connectionId,
+        requesterId,
+      },
+      email: recipient?.email
+        ? {
+            to: recipient.email,
+            subject: 'New connection request on NxtPro',
+            message: `${requesterName} sent you a connection request on NxtPro.`,
+          }
+        : undefined,
     });
-
-    if (
-      recipient?.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        recipientId,
-        'connections',
-      ))
-    ) {
-      this.sendBestEffortConnectionRequestEmail(recipient.email, requesterName);
-    }
   }
 
   private async notifyConnectionResponded(
+    connectionId: string,
     requesterId: string,
     responderId: string,
     status: 'accepted' | 'rejected',
@@ -340,26 +346,28 @@ export class ConnectionsService {
 
     this.eventEmitter.emit('notification.create', {
       userId: requesterId,
+      actorId: responderId,
       title: accepted ? 'Connection accepted' : 'Connection declined',
       message: `${responderName} ${accepted ? 'accepted' : 'declined'} your connection request.`,
-      type: 'connection_request',
+      type: accepted ? 'connection_accepted' : 'connection_rejected',
       referenceId: responderId,
+      referenceType: 'profile',
       preference: 'connections',
+      dedupeKey: `connection_${status}:${connectionId}`,
+      data: {
+        connectionId,
+        responderId,
+        status,
+      },
+      email:
+        accepted && requester?.email
+          ? {
+              to: requester.email,
+              subject: 'Your NxtPro connection request was accepted',
+              message: `${responderName} accepted your connection request on NxtPro.`,
+            }
+          : undefined,
     });
-
-    if (
-      accepted &&
-      requester?.email &&
-      (await this.notificationPreferencesService.allowsEmailNotification(
-        requesterId,
-        'connections',
-      ))
-    ) {
-      this.sendBestEffortConnectionAcceptedEmail(
-        requester.email,
-        responderName,
-      );
-    }
   }
 
   private findUserWithProfiles(userId: string): Promise<User | null> {
@@ -377,35 +385,5 @@ export class ConnectionsService {
       user?.email ??
       'Someone'
     );
-  }
-
-  private sendBestEffortConnectionRequestEmail(
-    email: string,
-    requesterName: string,
-  ): void {
-    void this.mailService
-      .sendConnectionRequestEmail(email, requesterName)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send connection request email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private sendBestEffortConnectionAcceptedEmail(
-    email: string,
-    responderName: string,
-  ): void {
-    void this.mailService
-      .sendConnectionAcceptedEmail(email, responderName)
-      .catch(error => {
-        this.logger.warn(
-          `Failed to send connection accepted email: ${this.getErrorMessage(error)}`,
-        );
-      });
-  }
-
-  private getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Unknown error';
   }
 }

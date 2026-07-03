@@ -210,13 +210,24 @@ describe('SkillScoringService', () => {
         modelVersion: 'pace-v1',
       }),
     );
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'player-1',
-      title: 'Skill score completed',
-      message: 'Pace scoring finished with 86.',
-      type: 'skill_score',
-      referenceId: 'score-job-1',
-    });
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'player-1',
+        title: 'Skill score completed',
+        message: 'Pace scoring finished with 86.',
+        type: 'skill_score',
+        referenceId: 'score-job-1',
+        referenceType: 'skill_score_job',
+        dedupeKey: 'skill_score:score-job-1:completed',
+        data: {
+          scoringJobId: 'score-job-1',
+          skillKey: 'pace',
+          status: 'completed',
+          score: 86,
+        },
+      }),
+    );
   });
 
   it('stores final failure metadata and emits friendly failure notification', async () => {
@@ -249,13 +260,25 @@ describe('SkillScoringService', () => {
         retryable: true,
       }),
     );
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'player-1',
-      title: 'Skill scoring failed',
-      message: 'AI scoring is temporarily unavailable. Please try again later.',
-      type: 'skill_score',
-      referenceId: 'score-job-1',
-    });
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'player-1',
+        title: 'Skill scoring failed',
+        message:
+          'AI scoring is temporarily unavailable. Please try again later.',
+        type: 'skill_score',
+        referenceId: 'score-job-1',
+        referenceType: 'skill_score_job',
+        dedupeKey: 'skill_score:score-job-1:failed',
+        data: {
+          scoringJobId: 'score-job-1',
+          skillKey: 'pace',
+          status: 'failed',
+          errorCode: 'AI_SERVICE_UNAVAILABLE',
+        },
+      }),
+    );
   });
 
   it('does not update profile scores when AI result shape is invalid', async () => {

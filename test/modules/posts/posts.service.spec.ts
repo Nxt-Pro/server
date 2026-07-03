@@ -306,14 +306,25 @@ describe('PostsService engagement notifications', () => {
       content: 'Great session',
     });
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'owner_1',
-      title: 'New comment',
-      message: 'Commenter commented: Great session',
-      type: 'comment',
-      referenceId: post.id,
-      preference: 'postEngagement',
-    });
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'owner_1',
+        actorId: 'actor_1',
+        title: 'New comment',
+        message: 'Commenter commented: Great session',
+        type: 'post_comment',
+        referenceId: post.id,
+        referenceType: 'post',
+        preference: 'postEngagement',
+        dedupeKey: 'post_comment:comment_1',
+        data: {
+          postId: post.id,
+          commentId: 'comment_1',
+          actorId: 'actor_1',
+        },
+      }),
+    );
   });
 
   it('does not notify a user about their own comment', async () => {
@@ -369,14 +380,20 @@ describe('PostsService engagement notifications', () => {
 
     await service.likePost(post.id, 'actor_1');
 
-    expect(eventEmitter.emit).toHaveBeenCalledWith('notification.create', {
-      userId: 'owner_1',
-      title: 'New like',
-      message: 'Liker liked your post.',
-      type: 'like',
-      referenceId: post.id,
-      preference: 'postEngagement',
-    });
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'notification.create',
+      expect.objectContaining({
+        userId: 'owner_1',
+        actorId: 'actor_1',
+        title: 'New like',
+        message: 'Liker liked your post.',
+        type: 'post_like',
+        referenceId: post.id,
+        referenceType: 'post',
+        preference: 'postEngagement',
+        dedupeKey: `post_like:${post.id}:actor_1`,
+      }),
+    );
   });
 });
 

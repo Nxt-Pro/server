@@ -20,6 +20,17 @@ class RegisterDeviceDto {
   token: string;
 }
 
+function parsePaginationValue(
+  value: string | number,
+  fallback: number,
+  max?: number,
+): number {
+  const parsed = Number(value);
+  const safe = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+  const clamped = Math.max(0, safe);
+  return max ? Math.min(max, clamped) : clamped;
+}
+
 // import { JwtAuthGuard } from '@/modules/auth/guards'; // Check where guards are
 
 @Controller('notifications')
@@ -56,8 +67,8 @@ export class NotificationsController {
     if (!userId) throw HttpError.unauthorized();
     return this.notificationsService.getUserNotifications(
       userId,
-      Number(limit),
-      Number(offset),
+      Math.max(1, parsePaginationValue(limit, 20, 100)),
+      parsePaginationValue(offset, 0),
     );
   }
 

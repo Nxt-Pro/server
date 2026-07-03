@@ -254,6 +254,14 @@ export class SkillScoringService {
       message: `${registryEntry.displayName} scoring finished with ${score}.`,
       type: 'skill_score',
       referenceId: payload.scoringJobId,
+      referenceType: 'skill_score_job',
+      dedupeKey: `skill_score:${payload.scoringJobId}:completed`,
+      data: {
+        scoringJobId: payload.scoringJobId,
+        skillKey: registryEntry.skillKey,
+        status: 'completed',
+        score,
+      },
     });
 
     return {
@@ -292,6 +300,14 @@ export class SkillScoringService {
       ),
       type: 'skill_score',
       referenceId: payload.scoringJobId,
+      referenceType: 'skill_score_job',
+      dedupeKey: `skill_score:${payload.scoringJobId}:failed`,
+      data: {
+        scoringJobId: payload.scoringJobId,
+        skillKey: registryEntry?.skillKey ?? payload.skillKey,
+        status: 'failed',
+        errorCode: normalized.code,
+      },
     });
 
     return normalized;

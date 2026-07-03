@@ -11,15 +11,11 @@ import {
   Report,
   User,
 } from '@/database/entities';
-import { MailModule } from '@/integrations/mail/mail.module';
 import { AuthModule } from '@/modules/auth/auth.module';
-import { SettingsModule } from '@/modules/settings';
 
 @Module({
   imports: [
     AuthModule,
-    MailModule,
-    SettingsModule,
     TypeOrmModule.forFeature([
       Block,
       Chat,
