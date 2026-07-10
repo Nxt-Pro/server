@@ -86,14 +86,14 @@ Scouts can call `GET /api/ai/recommendations?k=10`. The backend calls the
 Python recommendation service endpoint:
 
 ```text
-GET ${AI_RECOMMENDATION_SERVICE_URL}/api/scouts/{scoutId}/recommendations?k=10
+POST ${AI_RECOMMENDATION_SERVICE_URL}/api/recommendations/context
 ```
 
-The recommendation service expects either exported CSV snapshots through
-`RECO_DATA_DIR` or synthetic sample data. It does not query the live Postgres DB.
-The backend treats those rows as candidates only: it hydrates player IDs from
-Postgres and drops unknown, inactive, banned, blocked, or muted players before
-returning recommendations.
+The API builds live viewer context and eligible candidate players from Postgres,
+then sends that context to the recommendation service. The backend hydrates
+returned player IDs from Postgres and drops unknown, inactive, banned, blocked,
+or muted players before returning recommendations. Legacy CSV/model endpoints
+remain for offline exports and demos.
 
 ## Verification
 

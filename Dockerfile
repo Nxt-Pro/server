@@ -11,7 +11,7 @@ COPY tsconfig*.json nest-cli.json ./
 COPY src ./src
 RUN npm run build
 
-RUN mkdir -p uploads && chown -R node:node /app
+RUN mkdir -p uploads .seed-output && chown -R node:node uploads .seed-output
 
 USER node
 

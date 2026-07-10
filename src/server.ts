@@ -10,6 +10,17 @@ import { LoggingMiddleware } from '@/common/middlewares';
 
 const UPLOADS_CACHE_MAX_AGE = '30d';
 
+function resolveCorsOrigin(value: string): string | string[] {
+  if (value === '*') return value;
+
+  const origins = value
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+  return origins.length <= 1 ? (origins[0] ?? value) : origins;
+}
+
 export function setupServer(
   app: INestApplication,
   configService: ConfigService,
@@ -25,8 +36,9 @@ export function setupServer(
   app.use(loggingMiddleware.use.bind(loggingMiddleware));
 
   // CORS
+  const corsOrigin = configService.get<string>('corsOrigin', '*');
   app.enableCors({
-    origin: configService.get<string>('corsOrigin', '*'),
+    origin: resolveCorsOrigin(corsOrigin),
     credentials: true,
   });
 
@@ -48,6 +60,7 @@ export function setupServer(
       maxAge: UPLOADS_CACHE_MAX_AGE,
       setHeaders: res => {
         res.setHeader('Content-Disposition', 'inline');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
         res.setHeader('X-Content-Type-Options', 'nosniff');
       },
     }),

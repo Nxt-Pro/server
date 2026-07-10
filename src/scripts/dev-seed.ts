@@ -2164,7 +2164,9 @@ async function runUndoOnly(): Promise<void> {
     console.log('Dev seed undo complete.');
     console.table({ ...summary, media_files: mediaDeleted });
   } catch (error) {
-    await queryRunner.rollbackTransaction();
+    if (queryRunner.isTransactionActive) {
+      await queryRunner.rollbackTransaction();
+    }
     throw error;
   } finally {
     await queryRunner.release();
@@ -2192,7 +2194,9 @@ async function runSeed(skipInitialUndo = false): Promise<void> {
       media_files: ctx.media.files.length,
     });
   } catch (error) {
-    await queryRunner.rollbackTransaction();
+    if (queryRunner.isTransactionActive) {
+      await queryRunner.rollbackTransaction();
+    }
     throw error;
   } finally {
     await queryRunner.release();
